@@ -183,10 +183,13 @@ class DuplicatesDialog(QDialog):
             return
 
         keep_by_id: dict[int, int] = {}
-        total_bytes = 0
         for group_index, group in enumerate(self._groups):
             entries = [(item, asset) for gi, item, asset in self._entries if gi == group_index]
-            checked_group = [(item, asset) for item, asset in entries if item.checkState(4) == Qt.CheckState.Checked]
+            checked_group = [
+                (item, asset)
+                for item, asset in entries
+                if item.checkState(4) == Qt.CheckState.Checked
+            ]
             if not checked_group:
                 continue
             kept_group = [
@@ -204,20 +207,6 @@ class DuplicatesDialog(QDialog):
             keep = max(kept_group, key=lambda pair: pair[1].get("bytes") or 0)[1]
             for _item, asset in checked_group:
                 keep_by_id[asset["id"]] = keep["id"]
-                total_bytes += int(asset.get("bytes") or 0)
-
-        answer = QMessageBox.question(
-            self,
-            i18n.tr("Delete duplicate images?"),
-            i18n.trf(
-                "Delete {count} images ({size})? Files are moved to the trash; "
-                "unchecked images are kept.",
-                count=len(keep_by_id),
-                size=human_size(total_bytes),
-            ),
-        )
-        if answer != QMessageBox.StandardButton.Yes:
-            return
 
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
@@ -225,25 +214,26 @@ class DuplicatesDialog(QDialog):
         finally:
             QApplication.restoreOverrideCursor()
 
-        if result["deleted"]:
-            message = i18n.trf(
-                "Deleted {count} images, freed {size}.",
-                count=result["deleted"],
-                size=human_size(result["freed"]),
-            )
-            if result["permanent"]:
-                message += "\n" + i18n.trf(
-                    "{count} files were permanently deleted because the trash was unavailable.",
-                    count=result["permanent"],
-                )
-            if result["errors"]:
-                message += "\n\n" + i18n.tr("Some files could not be deleted:")
-                message += "\n" + "\n".join(html.escape(error) for error in result["errors"][:5])
-            QMessageBox.information(self, i18n.tr("Duplicate images"), message)
-            self.accept()
-        else:
+        if result["errors"]:
             QMessageBox.warning(
                 self,
                 i18n.tr("Some files could not be deleted"),
-                "\n".join(result["errors"][:8]) or i18n.tr("No files were deleted."),
+                "\n".join(html.escape(error) for error in result["errors"][:8]),
+            )
+        if result["permanent"]:
+            QMessageBox.warning(
+                self,
+                i18n.tr("Duplicate images"),
+                i18n.trf(
+                    "{count} files were permanently deleted because the trash was unavailable.",
+                    count=result["permanent"],
+                ),
+            )
+        if result["deleted"]:
+            self.accept()
+        elif not result["errors"]:
+            QMessageBox.warning(
+                self,
+                i18n.tr("Some files could not be deleted"),
+                i18n.tr("No files were deleted."),
             )

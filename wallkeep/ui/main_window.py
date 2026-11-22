@@ -804,23 +804,7 @@ class MainWindow(QMainWindow):
         if not assets:
             return
         if self._busy:
-            QMessageBox.information(
-                self,
-                i18n.tr("Delete…"),
-                i18n.tr("Wait for the current task to finish."),
-            )
-            return
-        box = QMessageBox(self)
-        box.setIcon(QMessageBox.Icon.Warning)
-        box.setWindowTitle(i18n.tr("Move to trash?"))
-        box.setText(
-            i18n.trf("Move {count} images to the trash?", count=len(assets))
-        )
-        box.setStandardButtons(
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-        box.setDefaultButton(QMessageBox.StandardButton.No)
-        if box.exec() != QMessageBox.StandardButton.Yes:
+            self.status_label.setText(i18n.tr("Wait for the current task to finish."))
             return
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
@@ -832,22 +816,21 @@ class MainWindow(QMainWindow):
         finally:
             QApplication.restoreOverrideCursor()
         if result["deleted"]:
-            message = i18n.trf(
-                "Moved {count} images to the trash.", count=result["deleted"]
-            )
-            if result["errors"]:
-                message += "\n\n" + i18n.tr(
-                    "Some images could not be moved to the trash:"
-                )
-                message += "\n" + "\n".join(result["errors"][:5])
-            QMessageBox.information(self, i18n.tr("Delete…"), message)
             self.refresh()
-        else:
+            self.status_label.setText(
+                i18n.trf("Moved {count} images to the trash.", count=result["deleted"])
+            )
+        if result["errors"]:
             QMessageBox.warning(
                 self,
                 i18n.tr("Could not move to trash"),
-                "\n".join(result["errors"][:8])
-                or i18n.tr("No images were deleted."),
+                "\n".join(result["errors"][:8]),
+            )
+        elif not result["deleted"]:
+            QMessageBox.warning(
+                self,
+                i18n.tr("Could not move to trash"),
+                i18n.tr("No images were deleted."),
             )
 
     def _open_current(self) -> None:
