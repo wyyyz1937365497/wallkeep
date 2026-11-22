@@ -667,3 +667,60 @@ def delete_assets(
         "permanent": permanently_deleted,
         "errors": errors,
     }
+
+
+def _trash_file(path: Path) -> tuple[bool, str]:
+    if shutil.which("gio") is None:
+        return False, "gio not found"
+    result = subprocess.run(
+        ["gio", "trash", str(path)],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        return False, detail or f"gio exited with {result.returncode}"
+    return True, ""
+
+
+def trash_assets(
+    db_path: Path,
+    asset_ids: set[int],
+    *,
+    log: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
+    """Move assets to the system trash and remove their library rows."""
+    connection = db.connect(db_path)
+    deleted = 0
+    freed = 0
+    errors: list[str] = []
+    try:
+        for asset_id in sorted(asset_ids):
+            row = connection.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
+            if row is None:
+                continue
+            path = Path(row["path"])
+            if path.exists():
+                ok, detail = _trash_file(path)
+                if not ok:
+                    errors.append(f"{path}: {detail}")
+                    continue
+            connection.execute(
+                "UPDATE sources SET asset_id = NULL, status = 'deleted' WHERE asset_id = ?",
+                (asset_id,),
+            )
+            connection.execute("DELETE FROM assets WHERE id = ?", (asset_id,))
+            try:
+                thumb_path(row["sha256"]).unlink(missing_ok=True)
+            except OSError:
+                pass
+            deleted += 1
+            freed += int(row["bytes"] or 0)
+            connection.commit()
+            if log:
+                log(f"Moved to trash: {path}")
+    finally:
+        connection.close()
+    return {"deleted": deleted, "freed": freed, "errors": errors}

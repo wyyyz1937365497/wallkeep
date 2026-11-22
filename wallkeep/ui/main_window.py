@@ -3,7 +3,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from PySide6.QtCore import QProcess, QSettings, QSize, Qt, QTimer, QUrl
+from PySide6.QtCore import QItemSelectionModel, QProcess, QSettings, QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QBrush, QDesktopServices, QFontDatabase, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import db, i18n, paths, wallpaper, xsync
+from .. import db, i18n, library, paths, wallpaper, xsync
 from .details import DetailsPanel
 from .dialogs import AddUserDialog, SettingsDialog
 from .duplicates import DuplicatesDialog
@@ -728,11 +728,16 @@ class MainWindow(QMainWindow):
         index = self.list_view.indexAt(position)
         if not index.isValid():
             return
-        if not self.list_view.selectionModel().isSelected(index):
+        selection = self.list_view.selectionModel()
+        if not selection.isSelected(index):
+            selection.select(
+                index, QItemSelectionModel.SelectionFlag.ClearAndSelect
+            )
             self.list_view.setCurrentIndex(index)
         asset = self.model.row_at(index)
         if not asset:
             return
+        assets = self._selected_assets() or [asset]
         menu = QMenu(self)
         wallpaper_action = menu.addAction(
             self._icon("preferences-desktop-wallpaper"), i18n.tr("Set as wallpaper")
@@ -741,6 +746,10 @@ class MainWindow(QMainWindow):
         folder_action = menu.addAction(self._icon("folder-open"), i18n.tr("Show in folder"))
         menu.addSeparator()
         copy_action = menu.addAction(self._icon("edit-copy"), i18n.tr("Copy path"))
+        menu.addSeparator()
+        delete_action = menu.addAction(
+            self._icon("edit-delete", "user-trash"), i18n.tr("Delete…")
+        )
         chosen = menu.exec(self.list_view.viewport().mapToGlobal(position))
         if chosen == wallpaper_action:
             self._set_wallpaper(asset["path"])
@@ -750,6 +759,58 @@ class MainWindow(QMainWindow):
             self._reveal_path(asset["path"])
         elif chosen == copy_action:
             QApplication.clipboard().setText(asset["path"])
+        elif chosen == delete_action:
+            self._delete_assets(assets)
+
+    def _delete_assets(self, assets: list[dict]) -> None:
+        if not assets:
+            return
+        if self._busy:
+            QMessageBox.information(
+                self,
+                i18n.tr("Delete…"),
+                i18n.tr("Wait for the current task to finish."),
+            )
+            return
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle(i18n.tr("Move to trash?"))
+        box.setText(
+            i18n.trf("Move {count} images to the trash?", count=len(assets))
+        )
+        box.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        box.setDefaultButton(QMessageBox.StandardButton.No)
+        if box.exec() != QMessageBox.StandardButton.Yes:
+            return
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            result = library.trash_assets(
+                paths.DB_PATH,
+                {asset["id"] for asset in assets},
+                log=self._append_log,
+            )
+        finally:
+            QApplication.restoreOverrideCursor()
+        if result["deleted"]:
+            message = i18n.trf(
+                "Moved {count} images to the trash.", count=result["deleted"]
+            )
+            if result["errors"]:
+                message += "\n\n" + i18n.tr(
+                    "Some images could not be moved to the trash:"
+                )
+                message += "\n" + "\n".join(result["errors"][:5])
+            QMessageBox.information(self, i18n.tr("Delete…"), message)
+            self.refresh()
+        else:
+            QMessageBox.warning(
+                self,
+                i18n.tr("Could not move to trash"),
+                "\n".join(result["errors"][:8])
+                or i18n.tr("No images were deleted."),
+            )
 
     def _open_current(self) -> None:
         asset = self._current_asset()
