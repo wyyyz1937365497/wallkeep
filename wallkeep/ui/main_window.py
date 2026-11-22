@@ -34,7 +34,6 @@ from PySide6.QtWidgets import (
 )
 
 from .. import db, i18n, paths, wallpaper, xsync
-from .delegate import WallpaperDelegate
 from .details import DetailsPanel
 from .dialogs import AddUserDialog, SettingsDialog
 from .model import AssetModel
@@ -176,12 +175,17 @@ class MainWindow(QMainWindow):
         self.list_view.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.list_view.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.list_view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.list_view.setSpacing(4)
+        self.list_view.setSpacing(6)
         self.list_view.setMouseTracking(True)
         self.list_view.setFrameShape(QFrame.Shape.NoFrame)
+        # Use Qt's native C++ item delegate. A Python-painted delegate
+        # (QStyledItemDelegate.paint) triggers a shiboken refcount crash
+        # in PySide6 6.12 while scrolling large grids.
+        self.list_view.setIconSize(QSize(208, 150))
         self.list_view.setGridSize(QSize(226, 206))
+        self.list_view.setTextElideMode(Qt.TextElideMode.ElideMiddle)
+        self.list_view.setWordWrap(False)
         self.list_view.setModel(self.model)
-        self.list_view.setItemDelegate(WallpaperDelegate(self.list_view))
         self.list_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.list_view.customContextMenuRequested.connect(self._context_menu)
         self.list_view.doubleClicked.connect(lambda _index: self._open_current())
