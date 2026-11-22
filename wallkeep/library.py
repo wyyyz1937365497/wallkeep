@@ -321,13 +321,19 @@ def import_x_downloads(
     requested_user: str,
     *,
     similar_threshold: int = 8,
+    ready: Callable[[Path], bool] | None = None,
+    prune: bool = True,
     log: Callable[[str], None] | None = None,
     cancel: CancelCallback | None = None,
 ) -> dict[str, int]:
     library = Path(library)
     staging = Path(staging)
     counts = {"downloaded": 0, "duplicate": 0, "similar": 0, "skipped": 0, "failed": 0}
-    files = [path for path in iter_images(staging) if path.suffix.lower() in GALLERY_EXTS]
+    files = [
+        path
+        for path in iter_images(staging)
+        if path.suffix.lower() in GALLERY_EXTS and (ready is None or ready(path))
+    ]
     connection = db.connect(db_path)
     candidates = [
         dict(row)
@@ -346,7 +352,7 @@ def import_x_downloads(
             source = db.source_by_key(connection, "x", requested_user, post_id, media_index)
             if source is not None and source["asset_id"] is not None:
                 counts["skipped"] += 1
-                _quiet_unlink(path)
+                _remove_media(path)
                 continue
             try:
                 sha256 = sha256_file(path)
@@ -373,7 +379,7 @@ def import_x_downloads(
                 )
                 make_thumbnail(Path(existing["path"]), sha256)
                 counts["duplicate"] += 1
-                _quiet_unlink(path)
+                _remove_media(path)
                 continue
 
             probe = probe_image(path)
@@ -404,7 +410,7 @@ def import_x_downloads(
                 )
                 make_thumbnail(Path(candidate["path"]), candidate["sha256"])
                 counts["similar"] += 1
-                _quiet_unlink(path)
+                _remove_media(path)
                 if log:
                     log(
                         f"Similar to {Path(candidate['path']).name} "
@@ -426,6 +432,7 @@ def import_x_downloads(
                 if log:
                     log(f"Could not move {path.name}: {error}")
                 continue
+            _remove_media(path)
 
             asset_id, created = db.insert_asset(
                 connection,
@@ -467,15 +474,17 @@ def import_x_downloads(
         connection.commit()
     finally:
         connection.close()
-    _prune_empty(staging)
+    if prune:
+        _prune_empty(staging)
     return counts
 
 
-def _quiet_unlink(path: Path) -> None:
-    try:
-        path.unlink()
-    except OSError:
-        pass
+def _remove_media(path: Path) -> None:
+    for candidate in (path, Path(str(path) + ".json"), path.with_suffix(".json")):
+        try:
+            candidate.unlink()
+        except OSError:
+            pass
 
 
 def _prune_empty(root: Path) -> None:

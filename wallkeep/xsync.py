@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import queue
 import re
 import shlex
 import shutil
@@ -48,6 +49,7 @@ def sync_user(
     options: SyncOptions,
     log: Callable[[str], None],
     cancel: threading.Event,
+    on_import: Callable[[dict[str, int]], None] | None = None,
 ) -> dict[str, object]:
     user = normalize_user(user)
     if not user:
@@ -91,32 +93,78 @@ def sync_user(
     )
     assert process.stdout is not None
     tail: list[str] = []
-    for raw_line in process.stdout:
-        if cancel.is_set():
+    line_queue: queue.Queue[str | None] = queue.Queue()
+
+    def read_output() -> None:
+        try:
+            for raw in process.stdout:
+                line_queue.put(raw)
+        finally:
+            line_queue.put(None)
+
+    threading.Thread(target=read_output, daemon=True).start()
+
+    totals = {"downloaded": 0, "duplicate": 0, "similar": 0, "skipped": 0, "failed": 0}
+    threshold = int(db.get_setting("similar_threshold", "8") or 0)
+
+    def ready(path: Path) -> bool:
+        # gallery-dl writes the JSON sidecar after the image is complete.
+        if not (Path(str(path) + ".json").exists() or path.with_suffix(".json").exists()):
+            return False
+        try:
+            return path.stat().st_size > 0
+        except OSError:
+            return False
+
+    def ingest(final: bool = False) -> None:
+        counts = library.import_x_downloads(
+            db_path,
+            library_dir,
+            staging,
+            user,
+            similar_threshold=threshold,
+            ready=None if final else ready,
+            prune=final,
+            log=log,
+            cancel=cancel.is_set,
+        )
+        for key in totals:
+            totals[key] += int(counts.get(key, 0))
+        if on_import and any(counts.get(key, 0) for key in ("downloaded", "duplicate", "similar")):
+            on_import(counts)
+
+    last_ingest = 0.0
+    terminated = False
+    while True:
+        try:
+            raw_line = line_queue.get(timeout=0.4)
+        except queue.Empty:
+            raw_line = ""
+        if raw_line is None:
+            break
+        if raw_line:
+            for line in raw_line.replace("\r", "\n").splitlines():
+                line = line.rstrip()
+                if not line:
+                    continue
+                tail.append(line)
+                tail = tail[-30:]
+                log(line)
+        now = time.monotonic()
+        if now - last_ingest >= 0.5:
+            if not cancel.is_set():
+                ingest()
+            last_ingest = now
+        if cancel.is_set() and not terminated and process.poll() is None:
+            terminated = True
             process.terminate()
             try:
                 process.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 process.kill()
-            break
-        for line in raw_line.replace("\r", "\n").splitlines():
-            line = line.rstrip()
-            if not line:
-                continue
-            tail.append(line)
-            tail = tail[-30:]
-            log(line)
     returncode = process.wait()
-
-    counts = library.import_x_downloads(
-        db_path,
-        library_dir,
-        staging,
-        user,
-        similar_threshold=int(db.get_setting("similar_threshold", "8") or 0),
-        log=log,
-        cancel=cancel.is_set,
-    )
+    ingest(final=True)
+    counts = totals
     error = None
     if returncode != 0:
         error = "gallery-dl exited with code {}: {}".format(

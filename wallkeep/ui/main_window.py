@@ -527,6 +527,7 @@ class MainWindow(QMainWindow):
             parent=self,
         )
         worker.log.connect(self._append_log)
+        worker.imported.connect(self._sync_imported)
         worker.finished_ok.connect(self._sync_done)
         worker.failed.connect(self._worker_failed)
         if len(users) == 1:
@@ -633,6 +634,11 @@ class MainWindow(QMainWindow):
         )
         self._append_log(summary)
         self.status_label.setText(summary)
+
+    def _sync_imported(self, user: str, counts: dict) -> None:
+        kind, current = self._current_filter
+        if kind in {"all", "x"} or (kind == "user" and current == user):
+            self.refresh()
 
     def _sync_done(self, result: dict) -> None:
         errors = []

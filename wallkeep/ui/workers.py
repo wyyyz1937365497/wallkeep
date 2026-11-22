@@ -38,6 +38,7 @@ class ImportWorker(QThread):
 
 class SyncWorker(QThread):
     log = Signal(str)
+    imported = Signal(str, dict)
     finished_ok = Signal(dict)
     failed = Signal(str)
     def __init__(
@@ -74,6 +75,7 @@ class SyncWorker(QThread):
                         options=self.options,
                         log=self.log.emit,
                         cancel=self._cancel,
+                        on_import=lambda counts: self.imported.emit(user, counts),
                     )
                 except Exception as error:  # noqa: BLE001 - reported to the UI
                     results.append({"user": user, "error": str(error), "counts": {}})
