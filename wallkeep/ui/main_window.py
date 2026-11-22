@@ -615,7 +615,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(
                 self,
                 i18n.tr("No duplicates found"),
-                i18n.tr(
+                i18n.trf(
                     "No duplicates found at the current pHash threshold ({threshold}).",
                     threshold=db.get_setting("similar_threshold", "8"),
                 ),
