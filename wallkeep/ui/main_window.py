@@ -36,8 +36,9 @@ from PySide6.QtWidgets import (
 from .. import db, i18n, paths, wallpaper, xsync
 from .details import DetailsPanel
 from .dialogs import AddUserDialog, SettingsDialog
+from .duplicates import DuplicatesDialog
 from .model import AssetModel
-from .workers import ImportWorker, SyncWorker
+from .workers import DuplicateWorker, ImportWorker, SyncWorker
 
 
 class MainWindow(QMainWindow):
@@ -47,8 +48,9 @@ class MainWindow(QMainWindow):
         self.resize(1400, 880)
         self.settings = QSettings("Wallkeep", "Wallkeep")
         self.model = AssetModel(self)
-        self._worker: ImportWorker | SyncWorker | None = None
+        self._worker: ImportWorker | SyncWorker | DuplicateWorker | None = None
         self._busy = False
+        self._pending_duplicates: list[list[dict]] | None = None
         self._current_filter: tuple[str, str | None] = ("all", None)
 
         self._search_timer = QTimer(self)
@@ -90,6 +92,14 @@ class MainWindow(QMainWindow):
         self.stop_action.setEnabled(False)
         self.stop_action.triggered.connect(self._stop)
 
+        self.duplicates_action = QAction(
+            self._icon("edit-find", "document-duplicate"), "Find duplicates…", self
+        )
+        self.duplicates_action.setStatusTip(
+            "Scan all images by pHash and review near-duplicates"
+        )
+        self.duplicates_action.triggered.connect(self._find_duplicates)
+
         self.settings_action = QAction(self._icon("configure"), "Settings", self)
         self.settings_action.setShortcut(QKeySequence("Ctrl+,"))
         self.settings_action.triggered.connect(self._open_settings)
@@ -120,6 +130,7 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
         toolbar.addAction(self.sync_action)
         toolbar.addAction(self.stop_action)
+        toolbar.addAction(self.duplicates_action)
         toolbar.addSeparator()
         toolbar.addAction(self.settings_action)
         spacer = QWidget(toolbar)
@@ -144,6 +155,7 @@ class MainWindow(QMainWindow):
         library_menu = menu.addMenu("&Library")
         library_menu.addAction(self.sync_action)
         library_menu.addAction(self.stop_action)
+        library_menu.addAction(self.duplicates_action)
         library_menu.addAction(self.reload_action)
         library_menu.addSeparator()
         library_menu.addAction(self.settings_action)
@@ -527,12 +539,61 @@ class MainWindow(QMainWindow):
         worker.finished.connect(self._thread_finished)
         worker.start()
 
+    def _find_duplicates(self) -> None:
+        if self._busy:
+            return
+        threshold = int(db.get_setting("similar_threshold", "8") or 0)
+        if threshold <= 0:
+            QMessageBox.information(
+                self,
+                i18n.tr("Duplicate images"),
+                i18n.tr("The similarity threshold is 0. Set it in Settings first."),
+            )
+            return
+        self._pending_duplicates = None
+        worker = DuplicateWorker(paths.DB_PATH, threshold, self)
+        worker.progress.connect(self._duplicate_progress)
+        worker.log.connect(self._append_log)
+        worker.finished_ok.connect(self._duplicates_ready)
+        worker.failed.connect(self._worker_failed)
+        self._begin_worker(worker, i18n.tr("Scanning fingerprints…"))
+
+    def _duplicate_progress(self, done: int, total: int, phase: str) -> None:
+        if phase == "fingerprints":
+            self.status_label.setText(
+                i18n.trf("Computing fingerprints… {done}/{total}", done=done, total=total)
+            )
+        else:
+            self.status_label.setText(
+                i18n.trf("Comparing fingerprints… {done}/{total}", done=done, total=total)
+            )
+
+    def _duplicates_ready(self, groups: list[list[dict]]) -> None:
+        self._pending_duplicates = groups
+
     def _thread_finished(self) -> None:
         worker = self._worker
         self._worker = None
         self._set_busy(False, i18n.tr("Ready"))
         if worker is not None:
             worker.deleteLater()
+        self.refresh()
+        groups = self._pending_duplicates
+        self._pending_duplicates = None
+        if groups is None:
+            return
+        if not groups:
+            QMessageBox.information(
+                self,
+                i18n.tr("No duplicates found"),
+                i18n.tr(
+                    "No duplicates found at the current pHash threshold ({threshold}).",
+                    threshold=db.get_setting("similar_threshold", "8"),
+                ),
+            )
+            return
+        dialog = DuplicatesDialog(groups, paths.DB_PATH, self)
+        dialog.exec()
         self.refresh()
 
     def _stop(self) -> None:
@@ -547,7 +608,13 @@ class MainWindow(QMainWindow):
 
     def _set_busy(self, busy: bool, label: str) -> None:
         self._busy = busy
-        for action in (self.import_action, self.add_user_action, self.sync_action, self.settings_action):
+        for action in (
+            self.import_action,
+            self.add_user_action,
+            self.sync_action,
+            self.duplicates_action,
+            self.settings_action,
+        ):
             action.setEnabled(not busy)
         self.stop_action.setEnabled(busy)
         self.progress.setVisible(busy)

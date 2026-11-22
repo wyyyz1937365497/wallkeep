@@ -40,7 +40,6 @@ class SyncWorker(QThread):
     log = Signal(str)
     finished_ok = Signal(dict)
     failed = Signal(str)
-
     def __init__(
         self,
         *,
@@ -90,3 +89,31 @@ class SyncWorker(QThread):
                 )
         finally:
             self.finished_ok.emit({"results": results, "cancelled": self._cancel.is_set()})
+
+
+class DuplicateWorker(QThread):
+    progress = Signal(int, int, str)
+    log = Signal(str)
+    finished_ok = Signal(list)
+    failed = Signal(str)
+
+    def __init__(self, db_path: Path, threshold: int, parent=None):
+        super().__init__(parent)
+        self.db_path = db_path
+        self.threshold = threshold
+
+    def run(self) -> None:
+        try:
+            groups = library.scan_duplicates(
+                self.db_path,
+                self.threshold,
+                progress=lambda done, total, phase: self.progress.emit(done, total, phase),
+                log=self.log.emit,
+                cancel=self.isInterruptionRequested,
+            )
+        except Exception as error:  # noqa: BLE001 - reported to the UI
+            self.failed.emit(str(error))
+            return
+        if self.isInterruptionRequested():
+            return
+        self.finished_ok.emit(groups)

@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
@@ -491,3 +492,169 @@ def _prune_empty(root: Path) -> None:
 def ensure_thumbnail_for(asset: dict[str, Any]) -> None:
     path = Path(asset["path"])
     make_thumbnail(path, asset["sha256"])
+
+
+def scan_duplicates(
+    db_path: Path,
+    threshold: int = 8,
+    *,
+    progress: Callable[[int, int, str], None] | None = None,
+    log: Callable[[str], None] | None = None,
+    cancel: CancelCallback | None = None,
+) -> list[list[dict[str, Any]]]:
+    """Compute missing pHashes and return groups of visually similar assets."""
+    if threshold <= 0:
+        return []
+    connection = db.connect(db_path)
+    try:
+        rows = [
+            dict(row)
+            for row in connection.execute(
+                "SELECT a.id, a.path, a.sha256, a.width, a.height, a.bytes, a.phash, a.origin, "
+                "  (SELECT user FROM sources s WHERE s.asset_id = a.id AND s.platform = 'x' "
+                "   ORDER BY s.id LIMIT 1) AS source_user "
+                "FROM assets a ORDER BY a.id"
+            ).fetchall()
+        ]
+        total = len(rows)
+        values: dict[int, int] = {}
+        for index, row in enumerate(rows, 1):
+            if cancel and cancel():
+                return []
+            value = row.get("phash")
+            if not value:
+                value = phash(Path(row["path"]))
+                if value:
+                    connection.execute(
+                        "UPDATE assets SET phash = ? WHERE id = ?", (value, row["id"])
+                    )
+                    row["phash"] = value
+                    if index % 25 == 0:
+                        connection.commit()
+            if value:
+                try:
+                    values[int(row["id"])] = int(value, 16)
+                except (TypeError, ValueError):
+                    pass
+            if progress and (index == 1 or index == total or index % 10 == 0):
+                progress(index, total, "fingerprints")
+        connection.commit()
+
+        ids = list(values)
+        parent = {asset_id: asset_id for asset_id in ids}
+
+        def find(asset_id: int) -> int:
+            while parent[asset_id] != asset_id:
+                parent[asset_id] = parent[parent[asset_id]]
+                asset_id = parent[asset_id]
+            return asset_id
+
+        def union(left: int, right: int) -> None:
+            left_root, right_root = find(left), find(right)
+            if left_root != right_root:
+                parent[right_root] = left_root
+
+        count = len(ids)
+        for index, left_id in enumerate(ids):
+            if cancel and cancel():
+                return []
+            if progress and index % 25 == 0:
+                progress(index, count, "compare")
+            left = values[left_id]
+            for right_id in ids[index + 1 :]:
+                if (left ^ values[right_id]).bit_count() <= threshold:
+                    union(left_id, right_id)
+
+        buckets: dict[int, list[int]] = {}
+        for asset_id in ids:
+            buckets.setdefault(find(asset_id), []).append(asset_id)
+        by_id = {row["id"]: row for row in rows}
+        groups = [
+            sorted((by_id[asset_id] for asset_id in bucket), key=lambda row: row["bytes"] or 0, reverse=True)
+            for bucket in buckets.values()
+            if len(bucket) > 1
+        ]
+        groups.sort(key=lambda group: sum(row["bytes"] or 0 for row in group), reverse=True)
+        if log:
+            log(f"Duplicate scan: {len(groups)} group(s) at pHash threshold {threshold}")
+        return groups
+    finally:
+        connection.close()
+
+
+def delete_assets(
+    db_path: Path,
+    delete_ids: set[int],
+    keep_by_id: dict[int, int],
+    *,
+    log: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
+    """Delete assets, repoint their sources to a kept asset, and trash files."""
+    connection = db.connect(db_path)
+    deleted = 0
+    freed = 0
+    trashed = 0
+    permanently_deleted = 0
+    errors: list[str] = []
+    try:
+        for asset_id in sorted(delete_ids):
+            row = connection.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
+            if row is None:
+                continue
+            keep_id = keep_by_id.get(asset_id)
+            if keep_id is None or keep_id == asset_id:
+                errors.append(f"no kept asset for {row['path']}")
+                continue
+            if keep_id in delete_ids:
+                errors.append(f"kept asset would also be deleted: {row['path']}")
+                continue
+            path = Path(row["path"])
+            if path.exists():
+                method = None
+                if shutil.which("gio"):
+                    result = subprocess.run(
+                        ["gio", "trash", str(path)],
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                        check=False,
+                    )
+                    if result.returncode == 0:
+                        method = "trash"
+                        trashed += 1
+                if method is None:
+                    try:
+                        path.unlink()
+                        method = "unlink"
+                        permanently_deleted += 1
+                    except OSError as error:
+                        errors.append(f"{path}: {error}")
+                        continue
+            keep = connection.execute(
+                "SELECT id FROM assets WHERE id = ?", (keep_id,)
+            ).fetchone()
+            if keep is None:
+                errors.append(f"kept asset {keep_id} no longer exists")
+                continue
+            connection.execute(
+                "UPDATE sources SET asset_id = ? WHERE asset_id = ?", (keep_id, asset_id)
+            )
+            connection.execute("DELETE FROM assets WHERE id = ?", (asset_id,))
+            try:
+                thumb_path(row["sha256"]).unlink(missing_ok=True)
+            except OSError:
+                pass
+            deleted += 1
+            freed += int(row["bytes"] or 0)
+            connection.commit()
+            if log:
+                log(f"Deleted {path} (kept asset {keep_id})")
+    finally:
+        connection.close()
+    return {
+        "deleted": deleted,
+        "freed": freed,
+        "trashed": trashed,
+        "permanent": permanently_deleted,
+        "errors": errors,
+    }

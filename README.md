@@ -56,6 +56,15 @@ uv sync --upgrade-package gallery-dl
 - 阈值在“设置 → Similarity threshold”调整；`0` 关闭近似去重，数值越小越严格。
 - 每次匹配的 `match_asset_id / match_distance / match_kind` 会写入 `sources` 表，便于审计。
 
+## 重复图片复核
+
+点击工具栏或 `图库 → 查找重复图片…`：
+
+1. 对没有 pHash 的图片补算指纹，已有指纹直接复用。
+2. 按当前 `Similarity threshold` 对全部图片做两两 pHash 比对，列出重复组。
+3. 每组默认保留体积最大的一张，其余打勾；也可以手动改勾选，逐张决定。
+4. 点击“删除勾选…”后文件移到系统回收站（回收站不可用时才永久删除），并把被删图片的 X 来源重新指向保留的那张，随后清理数据库记录和缩略图。
+
 ## 数据位置
 
 | 内容 | 路径 |
