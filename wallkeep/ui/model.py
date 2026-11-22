@@ -32,6 +32,16 @@ class AssetModel(QAbstractListModel):
             return None
         return self._rows[index.row()]
 
+    def existing_ids(self) -> set[int]:
+        return {int(row["id"]) for row in self._rows}
+
+    def prepend_rows(self, rows: list[dict]) -> None:
+        if not rows:
+            return
+        self.beginInsertRows(QModelIndex(), 0, len(rows) - 1)
+        self._rows = rows + self._rows
+        self.endInsertRows()
+
     def rowCount(self, parent=QModelIndex()) -> int:  # noqa: N802
         return 0 if parent.isValid() else len(self._rows)
 

@@ -39,7 +39,7 @@ install -Dm644 packaging/wallkeep.desktop ~/.local/share/applications/wallkeep.d
 3. 如果直连 X 需要代理，在“设置”或添加用户对话框里填写（例如 `http://127.0.0.1:7890`）。
 4. 同步时 `gallery-dl` 会从浏览器读取 Cookie；Wallkeep 不保存密码或 Cookie 值。
 
-同步过程中，每张图片及其 JSON sidecar 写完后会立即导入 SQLite 并刷新当前列表（无需等整个用户同步结束）；新图片出现在列表顶部，X 用户计数实时增加。
+同步过程中，每张图片及其 JSON sidecar 写完后会立即导入 SQLite；界面约每 1.5 秒批量插入新图，不重建整个视图，侧栏计数在同步结束时汇总刷新。新图片出现在列表顶部。
 
 X 的 Web 接口和 GraphQL query id 会变化；下载层使用 `gallery-dl`，升级它即可跟上变化：
 

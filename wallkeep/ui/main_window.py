@@ -58,6 +58,15 @@ class MainWindow(QMainWindow):
         self._search_timer.setInterval(250)
         self._search_timer.timeout.connect(self._reload_assets)
 
+        # Live imports are inserted in small batches. Updating the whole view
+        # every 0.5 s during a long sync is both jarring and hits a PySide6
+        # refcount bug; a single-shot timer coalesces the batches.
+        self._live_dirty = False
+        self._live_timer = QTimer(self)
+        self._live_timer.setSingleShot(True)
+        self._live_timer.setInterval(1500)
+        self._live_timer.timeout.connect(self._apply_live_import)
+
         self._build_actions()
         self._build_ui()
         self._restore_state()
@@ -398,10 +407,25 @@ class MainWindow(QMainWindow):
         self._reload_assets()
 
     def _reload_assets(self) -> None:
+        current_asset = self._current_asset()
+        current_id = int(current_asset["id"]) if current_asset else None
         kind, user = self._current_filter
         rows = db.fetch_assets(kind, user, self.search.text())
         self.model.set_rows(rows)
-        self.details.clear()
+        restored = False
+        if current_id is not None:
+            for row_index, row in enumerate(rows):
+                if int(row["id"]) == current_id:
+                    model_index = self.model.index(row_index, 0)
+                    self.list_view.setCurrentIndex(model_index)
+                    self.list_view.selectionModel().select(
+                        model_index, QItemSelectionModel.SelectionFlag.ClearAndSelect
+                    )
+                    self.details.show_asset(row)
+                    restored = True
+                    break
+        if not restored:
+            self.details.clear()
         if rows:
             self.stack.setCurrentWidget(self.list_view)
         else:
@@ -577,6 +601,8 @@ class MainWindow(QMainWindow):
     def _thread_finished(self) -> None:
         worker = self._worker
         self._worker = None
+        self._live_timer.stop()
+        self._live_dirty = False
         self._set_busy(False, i18n.tr("Ready"))
         if worker is not None:
             worker.deleteLater()
@@ -636,9 +662,21 @@ class MainWindow(QMainWindow):
         self.status_label.setText(summary)
 
     def _sync_imported(self, user: str, counts: dict) -> None:
+        self._live_dirty = True
+        if not self._live_timer.isActive():
+            self._live_timer.start()
+
+    def _apply_live_import(self) -> None:
+        self._live_dirty = False
         kind, current = self._current_filter
-        if kind in {"all", "x"} or (kind == "user" and current == user):
-            self.refresh()
+        rows = db.fetch_assets(kind, current, self.search.text())
+        known = self.model.existing_ids()
+        new_rows = [row for row in rows if int(row["id"]) not in known]
+        if new_rows:
+            self.model.prepend_rows(new_rows)
+            self.stack.setCurrentWidget(self.list_view)
+        if self._live_dirty and not self._live_timer.isActive():
+            self._live_timer.start()
 
     def _sync_done(self, result: dict) -> None:
         errors = []
