@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Wallkeep
+Name[zh_CN]=Wallkeep 壁纸库
+Comment=Native wallpaper library for local collections and X media
+Comment[zh_CN]=本地壁纸与 X 媒体的原生壁纸库
+Exec=wallkeep
+Icon=image-x-generic
+Terminal=false
+Categories=Graphics;Utility;
+StartupWMClass=wallkeep
