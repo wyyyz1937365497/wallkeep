@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS settings (
 DEFAULT_SETTINGS = {
     "library_dir": str(paths.DEFAULT_LIBRARY_DIR),
     "cookies_browser": "firefox",
+    "cookies_keyring": "gnomekeyring",
     "proxy": "",
     "image_only": "1",
     "language": "auto",

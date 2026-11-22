@@ -16,6 +16,13 @@ BROWSERS = [
     ("Edge", "edge"),
 ]
 
+KEYRINGS = [
+    ("GNOME keyring (libsecret)", "gnomekeyring"),
+    ("KWallet", "kwallet"),
+    ("Basic", "basictext"),
+    ("Auto", "auto"),
+]
+
 
 def install_qt_plugin_path() -> None:
     """Expose the system Qt plugins (KDE platform theme, Breeze, Darkly)."""

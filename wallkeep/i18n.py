@@ -61,6 +61,14 @@ ZH = {
     "X username": "X 用户名",
     "username without @": "用户名，不含 @",
     "Cookie source": "Cookie 来源",
+    "Cookie keyring": "Cookie 钥匙串",
+    "GNOME keyring (libsecret)": "GNOME 钥匙串（libsecret）",
+    "KWallet": "KWallet",
+    "Basic": "Basic",
+    "Auto": "自动",
+    "X rejected the cookies. Set Cookie keyring to GNOME keyring, "
+    "or log in to x.com again in the browser.": "X 拒绝了 Cookie。请把“Cookie 钥匙串”设为 GNOME 钥匙串，"
+    "或在浏览器中重新登录 x.com。",
     "Proxy": "代理",
     "Cookies are read from the selected browser on every sync. "
     "No password or cookie value is stored by Wallkeep.": "每次同步都会从所选浏览器读取 Cookie。"

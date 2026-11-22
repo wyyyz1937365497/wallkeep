@@ -487,6 +487,7 @@ class MainWindow(QMainWindow):
             return
         db.ensure_user(user)
         db.set_setting("cookies_browser", values["browser"])
+        db.set_setting("cookies_keyring", values["keyring"])
         db.set_setting("proxy", values["proxy"])
         self.sync_action.setStatusTip("Sync the selected X user, or all X users")
         self.refresh()
@@ -514,6 +515,7 @@ class MainWindow(QMainWindow):
             return
         options = xsync.SyncOptions(
             browser=db.get_setting("cookies_browser", "firefox"),
+            keyring=db.get_setting("cookies_keyring", "gnomekeyring"),
             proxy=db.get_setting("proxy", ""),
             image_only=True,
         )
@@ -650,10 +652,21 @@ class MainWindow(QMainWindow):
             self.status_label.setText(i18n.tr("Sync cancelled"))
         elif errors:
             self.log_dock.show()
+            hint = ""
+            if any(
+                "AuthRequired" in error
+                or "authenticated cookies" in error
+                or "could not be decrypted" in error
+                for error in errors
+            ):
+                hint = "\n\n" + i18n.tr(
+                    "X rejected the cookies. Set Cookie keyring to GNOME keyring, "
+                    "or log in to x.com again in the browser."
+                )
             QMessageBox.warning(
                 self,
                 i18n.tr("Sync finished with errors"),
-                "\n".join(errors[:3]) + ("\n…" if len(errors) > 3 else ""),
+                "\n".join(errors[:3]) + ("\n…" if len(errors) > 3 else "") + hint,
             )
         else:
             self.status_label.setText(i18n.tr("Sync complete"))
@@ -670,6 +683,7 @@ class MainWindow(QMainWindow):
         values = dialog.values()
         db.set_setting("library_dir", values["library_dir"])
         db.set_setting("cookies_browser", values["browser"])
+        db.set_setting("cookies_keyring", values["keyring"])
         db.set_setting("proxy", values["proxy"])
         db.set_setting("language", values["language"])
         db.set_setting("similar_threshold", values["similar_threshold"])

@@ -44,6 +44,18 @@ X 的 Web 接口和 GraphQL query id 会变化；下载层使用 `gallery-dl`，
 uv sync --upgrade-package gallery-dl
 ```
 
+### Cookie 解密 / `AuthRequired`
+
+Chromium 系浏览器会用系统钥匙串加密 Cookie。Wallkeep 默认对 Chrome/Chromium/Edge/Brave 使用 `+gnomekeyring`（依赖已安装的 `secretstorage`），Edge 实测可正确解出 `auth_token` / `ct0`。
+
+如果仍提示 `AuthRequired` 或 `could not be decrypted`：
+
+1. 设置 → **Cookie 钥匙串**，依次尝试 `GNOME keyring`、`KWallet`、`Auto`。
+2. 确认浏览器里仍然登录着 x.com，然后重新同步。
+3. 仍不行可以改用 Firefox（Cookie 不加密），或把 Cookie 导出为 `cookies.txt` 后用 `gallery-dl --cookies` 手动下载。
+
+Wallkeep 不保存密码或 Cookie 值；同步时由 `gallery-dl` 读取。
+
 请遵守 X 的服务条款，控制同步频率，只下载你有权保存的内容。
 
 ## 去重规则

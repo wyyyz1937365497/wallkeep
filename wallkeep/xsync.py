@@ -17,6 +17,7 @@ from . import db, library, paths
 @dataclass
 class SyncOptions:
     browser: str = "firefox"
+    keyring: str = "gnomekeyring"
     proxy: str = ""
     image_only: bool = True
 
@@ -55,11 +56,18 @@ def sync_user(
     staging.mkdir(parents=True, exist_ok=True)
     archive = paths.ARCHIVE_DIR / f"x_{user.lower()}.sqlite3"
     executable = gallery_dl_executable()
+    browser_spec = options.browser
+    if (
+        options.browser in {"chrome", "chromium", "edge", "brave"}
+        and options.keyring
+        and options.keyring != "auto"
+    ):
+        browser_spec += "+" + options.keyring
     command = [
         executable,
         "--config-ignore",
         "--cookies-from-browser",
-        options.browser,
+        browser_spec,
         "--download-archive",
         str(archive),
         "--write-metadata",

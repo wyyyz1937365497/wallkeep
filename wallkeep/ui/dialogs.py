@@ -21,12 +21,21 @@ from PySide6.QtWidgets import (
 
 from .. import db, i18n, paths
 from ..xsync import normalize_user
-from .theme import BROWSERS
+from .theme import BROWSERS, KEYRINGS
 
 
 def _browser_combo(current: str) -> QComboBox:
     combo = QComboBox()
     for label, value in BROWSERS:
+        combo.addItem(label, value)
+    index = combo.findData(current)
+    combo.setCurrentIndex(index if index >= 0 else 0)
+    return combo
+
+
+def _keyring_combo(current: str) -> QComboBox:
+    combo = QComboBox()
+    for label, value in KEYRINGS:
         combo.addItem(label, value)
     index = combo.findData(current)
     combo.setCurrentIndex(index if index >= 0 else 0)
@@ -57,10 +66,12 @@ class AddUserDialog(QDialog):
         self.username.setPlaceholderText("username without @")
         self.username.setClearButtonEnabled(True)
         self.browser = _browser_combo(db.get_setting("cookies_browser", "firefox"))
+        self.keyring = _keyring_combo(db.get_setting("cookies_keyring", "gnomekeyring"))
         self.proxy = QLineEdit(db.get_setting("proxy", ""))
         self.proxy.setPlaceholderText("http://127.0.0.1:7890 (optional)")
         form.addRow("X username", self.username)
         form.addRow("Cookie source", self.browser)
+        form.addRow("Cookie keyring", self.keyring)
         form.addRow("Proxy", self.proxy)
         layout.addLayout(form)
 
@@ -96,6 +107,7 @@ class AddUserDialog(QDialog):
         return {
             "user": normalize_user(self.username.text()),
             "browser": self.browser.currentData(),
+            "keyring": self.keyring.currentData(),
             "proxy": self.proxy.text().strip(),
         }
 
@@ -123,9 +135,11 @@ class SettingsDialog(QDialog):
         form.addRow("X download folder", library_row)
 
         self.browser = _browser_combo(db.get_setting("cookies_browser", "firefox"))
+        self.keyring = _keyring_combo(db.get_setting("cookies_keyring", "gnomekeyring"))
         self.proxy = QLineEdit(db.get_setting("proxy", ""))
         self.proxy.setPlaceholderText("http://127.0.0.1:7890 (optional)")
         form.addRow("Cookie source", self.browser)
+        form.addRow("Cookie keyring", self.keyring)
         form.addRow("Proxy", self.proxy)
 
         self.similar = QSpinBox()
@@ -196,6 +210,7 @@ class SettingsDialog(QDialog):
         return {
             "library_dir": str(Path(self.library.text()).expanduser()),
             "browser": self.browser.currentData(),
+            "keyring": self.keyring.currentData(),
             "proxy": self.proxy.text().strip(),
             "similar_threshold": str(self.similar.value()),
             "language": self.language.currentData(),
