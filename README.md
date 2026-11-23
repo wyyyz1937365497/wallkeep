@@ -35,9 +35,9 @@ uv run wallkeep
 
 ### 发行包
 
-- **Debian/Ubuntu**（trixie 及更新）：下载 Release 中的 `wallkeep_0.1.0_all.deb`，然后
+- **Debian/Ubuntu**（trixie 及更新）：从 [Releases](https://github.com/wyyyz1937365497/wallkeep/releases/latest) 下载 `wallkeep_0.1.0_all.deb`，然后
   `sudo apt install ./wallkeep_0.1.0_all.deb`。
-- **Arch Linux**：AUR 包 `wallkeep`；PKGBUILD 在 `packaging/aur/`。
+- **Arch Linux**：AUR 配置在 `packaging/aur/`；发布到 AUR 需要先给 AUR 账户注册 SSH key。也可以下载 Release 里的 `PKGBUILD` + `wallkeep-0.1.0.tar.gz`，放在同一目录后 `makepkg -si`。
 
 如果希望从桌面启动并让 XDG portal 识别应用 ID：
 

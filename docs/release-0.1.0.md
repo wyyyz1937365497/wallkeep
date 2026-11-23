@@ -28,11 +28,13 @@ wallkeep
 
 ### Arch Linux
 
-AUR 包 `wallkeep`，或使用仓库中的 `packaging/aur/PKGBUILD`：
+AUR 配置在仓库的 `packaging/aur/`。当前环境没有 AUR 账户的 SSH 权限，所以尚未推送到 AUR；可以下载 Release 里的 `PKGBUILD` 和 `wallkeep-0.1.0.tar.gz`，放在同一目录后：
 
 ```bash
 makepkg -si
 ```
+
+AUR 账户配置好 SSH key 后，可直接把 `packaging/aur/{PKGBUILD,.SRCINFO}` 推到 `ssh://aur@aur.archlinux.org/wallkeep.git`。
 
 ### 从源码
 
