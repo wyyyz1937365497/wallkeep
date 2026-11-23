@@ -1,0 +1,38 @@
+# Maintainer: Wang Yinyou <140365984+wyyyz1937365497@users.noreply.github.com>
+pkgname=wallkeep
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Local-first wallpaper library; optional X sync is downloaded by gallery-dl"
+arch=('any')
+url="https://github.com/wyyyz1937365497/wallkeep"
+license=('MIT')
+depends=(
+    'python'
+    'pyside6'
+    'python-pillow'
+    'python-numpy'
+    'python-requests'
+    'python-secretstorage'
+    'gallery-dl'
+    'qt6-svg'
+)
+makedepends=(
+    'python-build'
+    'python-installer'
+    'python-wheel'
+    'python-hatchling'
+)
+source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+    cd "$pkgname-$pkgver"
+    python -m build --wheel --no-isolation
+}
+
+package() {
+    cd "$pkgname-$pkgver"
+    python -m installer --destdir="$pkgdir" dist/*.whl
+    install -Dm644 packaging/wallkeep.desktop \
+        "$pkgdir/usr/share/applications/wallkeep.desktop"
+}

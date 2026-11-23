@@ -826,9 +826,10 @@ class MainWindow(QMainWindow):
             i18n.tr("About Wallkeep"),
             i18n.tr(
                 "<b>Wallkeep</b><br>"
-                "A native wallpaper library for local collections and X media.<br><br>"
-                "X downloads use gallery-dl with your browser cookies. "
-                "Images are deduplicated by SHA-256."
+                "A local-first wallpaper library for indexing, browsing, "
+                "deduplicating and categorizing local images.<br><br>"
+                "Wallkeep does not download from X itself: optional X sync "
+                "is delegated entirely to gallery-dl."
             ),
         )
 

@@ -1,13 +1,21 @@
 # Wallkeep
 
-原生 Qt/PySide6 壁纸库：索引本地壁纸，并把 X（Twitter）用户的 Media 时间线下载成可浏览、可去重的壁纸收藏。
+本地优先的原生壁纸库：索引、浏览、搜索、分类、去重本地图片，并可选同步 X 用户的媒体时间线。
+
+**下载能力来自 [gallery-dl](https://codeberg.org/mikf/gallery-dl)，不是 Wallkeep。** Wallkeep 不实现 X 抓取、GraphQL 客户端、Cookie 提取/解密或媒体下载；可选的 X 同步只是调用 gallery-dl，并把下载结果纳入本地壁纸库管理。项目本质是本地壁纸管理的延伸。
 
 界面使用系统 Qt 平台主题（Darkly/Breeze、KDE 配色和字体），不带自定义样式表，所以在当前桌面里不会突兀；支持简体中文/英文自动切换。
+
+## 定位
+
+- **做**：本地目录索引、缩略图、搜索、来源分类、SHA-256 + pHash 去重、回收站删除、设置壁纸、可选的 X 同步入口与结果管理。
+- **不做**：X 爬虫、GraphQL 客户端、Cookie 提取/解密、下载器；这些全部由 `gallery-dl` 负责。
+- `gallery-dl` 以独立进程运行；Wallkeep 通过命令行和文件与它交互。
 
 ## 功能
 
 - **本地壁纸索引**：导入已有文件夹，原地索引，不移动/复制原文件。
-- **X 用户同步**：通过 `gallery-dl` 读取浏览器 Cookie，下载 `x.com/<user>/media` 的图片时间线；支持增量同步、代理。
+- **可选 X 同步（下载由 gallery-dl 完成）**：通过 `gallery-dl` 读取浏览器 Cookie，下载 `x.com/<user>/media` 的图片时间线；支持增量同步、代理。
 - **精确去重**：SHA-256，同一文件无论来自本地还是 X 都只保留一份。
 - **感知去重**：64 位 DCT pHash（Hamming 距离）+ 宽高比守卫，识别被反复转发、缩放、重压缩的同一张图；重复的 X 媒体只记录来源，不落第二份文件。
 - **SQLite 图库**：媒体路径、来源、尺寸、哈希、同步游标和去重信息统一保存。
@@ -24,6 +32,12 @@ uv run wallkeep
 ```
 
 系统要求：Linux、Python 3.11+、`gallery-dl`（由 `uv sync` 安装）。
+
+### 发行包
+
+- **Debian/Ubuntu**（trixie 及更新）：下载 Release 中的 `wallkeep_0.1.0_all.deb`，然后
+  `sudo apt install ./wallkeep_0.1.0_all.deb`。
+- **Arch Linux**：AUR 包 `wallkeep`；PKGBUILD 在 `packaging/aur/`。
 
 如果希望从桌面启动并让 XDG portal 识别应用 ID：
 

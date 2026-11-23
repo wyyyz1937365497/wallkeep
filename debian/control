@@ -1,0 +1,40 @@
+Source: wallkeep
+Section: graphics
+Priority: optional
+Maintainer: Wang Yinyou <140365984+wyyyz1937365497@users.noreply.github.com>
+Build-Depends: debhelper-compat (= 13),
+               dh-python,
+               pybuild-plugin-pyproject,
+               python3-all,
+               python3-hatchling,
+               python3-build,
+               python3-installer,
+               python3-wheel
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+Homepage: https://github.com/wyyyz1937365497/wallkeep
+Vcs-Git: https://github.com/wyyyz1937365497/wallkeep.git
+Vcs-Browser: https://github.com/wyyyz1937365497/wallkeep
+
+Package: wallkeep
+Architecture: all
+Depends: python3 (>= 3.11),
+         python3-pyside6.qtcore,
+         python3-pyside6.qtgui,
+         python3-pyside6.qtwidgets,
+         python3-pil,
+         python3-numpy,
+         python3-secretstorage,
+         python3-requests,
+         gallery-dl,
+         libqt6svg6,
+         qt6-wayland,
+         ${misc:Depends}
+Description: local-first wallpaper library with optional X sync
+ Wallkeep indexes and browses local wallpaper collections, generates
+ thumbnails, searches by source, detects exact and perceptual duplicates,
+ and can set wallpapers through the desktop environment.
+ .
+ Optional X timeline sync is downloaded by gallery-dl. Wallkeep does not
+ implement X scraping, GraphQL clients, cookie extraction or the downloader
+ itself; it only manages the resulting files.

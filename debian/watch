@@ -1,0 +1,2 @@
+version=4
+https://github.com/wyyyz1937365497/wallkeep/tags .*/v?(\d\S*)\.tar\.gz

@@ -153,10 +153,11 @@ ZH = {
     "{duplicate} 张重复，{skipped} 张已索引，{failed} 张失败。",
     "{count} wallpaper": "{count} 张壁纸",
     "{count} wallpapers": "{count} 张壁纸",
-    "<b>Wallkeep</b><br>A native wallpaper library for local collections and X media.<br><br>"
-    "X downloads use gallery-dl with your browser cookies. Images are deduplicated by SHA-256.": "<b>Wallkeep</b><br>"
-    "本地壁纸与 X 媒体的原生壁纸库。<br><br>"
-    "X 下载通过 gallery-dl 使用浏览器 Cookie；图片按 SHA-256 去重。",
+    "<b>Wallkeep</b><br>A local-first wallpaper library for indexing, browsing, "
+    "deduplicating and categorizing local images.<br><br>"
+    "Wallkeep does not download from X itself: optional X sync is delegated entirely to gallery-dl.": "<b>Wallkeep</b><br>"
+    "本地优先的壁纸库：索引、浏览、去重、分类整理本地图片。<br><br>"
+    "Wallkeep 本身不下载 X 内容；可选的 X 同步完全交给 gallery-dl。",
 }
 
 

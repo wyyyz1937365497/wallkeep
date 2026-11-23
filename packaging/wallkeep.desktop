@@ -2,8 +2,8 @@
 Type=Application
 Name=Wallkeep
 Name[zh_CN]=Wallkeep 壁纸库
-Comment=Native wallpaper library for local collections and X media
-Comment[zh_CN]=本地壁纸与 X 媒体的原生壁纸库
+Comment=Local-first wallpaper library; optional X sync via gallery-dl
+Comment[zh_CN]=本地优先的壁纸库；可选 X 同步由 gallery-dl 完成
 Exec=wallkeep
 Icon=image-x-generic
 Terminal=false

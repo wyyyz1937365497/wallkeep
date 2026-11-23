@@ -1,7 +1,7 @@
 [project]
 name = "wallkeep"
 version = "0.1.0"
-description = "Native wallpaper library for local collections and X media"
+description = "Local-first wallpaper library; optional X sync is downloaded by gallery-dl"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
