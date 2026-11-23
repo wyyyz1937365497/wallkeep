@@ -225,6 +225,11 @@ class MainWindow(QMainWindow):
         self.list_view.customContextMenuRequested.connect(self._context_menu)
         self.list_view.doubleClicked.connect(lambda _index: self._open_current())
         self.list_view.selectionModel().selectionChanged.connect(self._on_selection_changed)
+        self.delete_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Delete), self.list_view)
+        self.delete_shortcut.setContext(
+            Qt.ShortcutContext.WidgetWithChildrenShortcut
+        )
+        self.delete_shortcut.activated.connect(self._delete_selected)
 
         self.empty_page = QWidget()
         empty_layout = QVBoxLayout(self.empty_page)
@@ -886,6 +891,11 @@ class MainWindow(QMainWindow):
         elif chosen == copy_action:
             QApplication.clipboard().setText(asset["path"])
         elif chosen == delete_action:
+            self._delete_assets(assets)
+
+    def _delete_selected(self) -> None:
+        assets = self._selected_assets()
+        if assets:
             self._delete_assets(assets)
 
     def _delete_assets(self, assets: list[dict]) -> None:
