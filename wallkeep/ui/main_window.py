@@ -1,9 +1,20 @@
 from __future__ import annotations
 
+import json
 import shutil
+import sys
 from pathlib import Path
 
-from PySide6.QtCore import QItemSelectionModel, QProcess, QSettings, QSize, Qt, QTimer, QUrl
+from PySide6.QtCore import (
+    QItemSelectionModel,
+    QProcess,
+    QProcessEnvironment,
+    QSettings,
+    QSize,
+    Qt,
+    QTimer,
+    QUrl,
+)
 from PySide6.QtGui import QAction, QBrush, QDesktopServices, QFontDatabase, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -33,12 +44,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import db, i18n, library, paths, wallpaper, xsync
+from .. import db, i18n, library, paths, wallpaper
+from ..sync_cli import ERROR_MARKER, RESULT_MARKER, USER_MARKER
 from .details import DetailsPanel
 from .dialogs import AddUserDialog, SettingsDialog
 from .duplicates import DuplicatesDialog
 from .model import AssetModel
-from .workers import DuplicateWorker, ImportWorker, SyncWorker
+from .workers import DuplicateWorker, ImportWorker
 
 
 class MainWindow(QMainWindow):
@@ -48,7 +60,11 @@ class MainWindow(QMainWindow):
         self.resize(1400, 880)
         self.settings = QSettings("Wallkeep", "Wallkeep")
         self.model = AssetModel(self)
-        self._worker: ImportWorker | SyncWorker | DuplicateWorker | None = None
+        self._worker: ImportWorker | DuplicateWorker | None = None
+        self._sync_process: QProcess | None = None
+        self._sync_buffer = ""
+        self._sync_errors: list[str] = []
+        self._sync_cancel_requested = False
         self._busy = False
         self._pending_duplicates: list[list[dict]] | None = None
         self._current_filter: tuple[str, str | None] = ("all", None)
@@ -58,12 +74,10 @@ class MainWindow(QMainWindow):
         self._search_timer.setInterval(250)
         self._search_timer.timeout.connect(self._reload_assets)
 
-        # Live imports are inserted in small batches. Updating the whole view
-        # every 0.5 s during a long sync is both jarring and hits a PySide6
-        # refcount bug; a single-shot timer coalesces the batches.
-        self._live_dirty = False
+        # While the sync helper runs, poll SQLite and insert new rows in
+        # batches. No Qt objects are touched from the sync worker process.
         self._live_timer = QTimer(self)
-        self._live_timer.setSingleShot(True)
+        self._live_timer.setSingleShot(False)
         self._live_timer.setInterval(1500)
         self._live_timer.timeout.connect(self._apply_live_import)
 
@@ -537,34 +551,150 @@ class MainWindow(QMainWindow):
                 self, i18n.tr("Cannot create download folder"), str(error)
             )
             return
-        options = xsync.SyncOptions(
-            browser=db.get_setting("cookies_browser", "firefox"),
-            keyring=db.get_setting("cookies_keyring", "gnomekeyring"),
-            proxy=db.get_setting("proxy", ""),
-            image_only=True,
-        )
-        worker = SyncWorker(
-            db_path=paths.DB_PATH,
-            library_dir=library_dir,
-            users=users,
-            options=options,
-            parent=self,
-        )
-        worker.log.connect(self._append_log)
-        worker.imported.connect(self._sync_imported)
-        worker.finished_ok.connect(self._sync_done)
-        worker.failed.connect(self._worker_failed)
+
+        process = QProcess(self)
+        process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        process.setProgram(sys.executable)
+        arguments = [
+            "-m",
+            "wallkeep.sync_cli",
+            "--browser",
+            db.get_setting("cookies_browser", "firefox"),
+            "--keyring",
+            db.get_setting("cookies_keyring", "gnomekeyring"),
+        ]
+        proxy = db.get_setting("proxy", "").strip()
+        if proxy:
+            arguments += ["--proxy", proxy]
+        for entry in users:
+            arguments += ["--user", entry]
+        process.setArguments(arguments)
+
+        environment = QProcessEnvironment.systemEnvironment()
+        environment.insert("PYTHONUNBUFFERED", "1")
+        environment.insert("PYTHONIOENCODING", "utf-8")
+        process.setProcessEnvironment(environment)
+        process.readyReadStandardOutput.connect(self._read_sync_output)
+        process.finished.connect(self._sync_process_finished)
+        process.errorOccurred.connect(self._sync_process_error)
+
+        self._sync_process = process
+        self._sync_buffer = ""
+        self._sync_errors = []
+        self._sync_cancel_requested = False
         if len(users) == 1:
             label = i18n.trf("Syncing {target}…", target=f"@{users[0]}")
         else:
             label = i18n.trf("Syncing {count} X users…", count=len(users))
-        self._begin_worker(worker, label)
+        self._set_busy(True, label)
+        self._live_timer.start()
+        process.start()
 
     def _begin_worker(self, worker, label: str) -> None:
         self._worker = worker
         self._set_busy(True, label)
         worker.finished.connect(self._thread_finished)
         worker.start()
+
+    def _read_sync_output(self) -> None:
+        process = self._sync_process
+        if process is None:
+            return
+        chunk = bytes(process.readAllStandardOutput()).decode("utf-8", "replace")
+        if chunk:
+            self._sync_buffer += chunk.replace("\r", "\n")
+        while "\n" in self._sync_buffer:
+            line, self._sync_buffer = self._sync_buffer.split("\n", 1)
+            self._handle_sync_line(line)
+
+    def _handle_sync_line(self, line: str) -> None:
+        line = line.rstrip()
+        if not line:
+            return
+        if line.startswith(RESULT_MARKER):
+            try:
+                result = json.loads(line[len(RESULT_MARKER) :])
+            except ValueError:
+                self._append_log(line)
+                return
+            counts = result.get("counts", {})
+            user = result.get("user", "?")
+            self._append_log(
+                f"@{user}: {counts.get('downloaded', 0)} new, "
+                f"{counts.get('duplicate', 0)} duplicates, "
+                f"{counts.get('similar', 0)} similar, "
+                f"{counts.get('skipped', 0)} already indexed, "
+                f"{counts.get('failed', 0)} failed"
+            )
+            if result.get("error"):
+                self._sync_errors.append(f"@{user}: {result['error']}")
+        elif line.startswith(ERROR_MARKER):
+            message = line[len(ERROR_MARKER) :]
+            self._sync_errors.append(message)
+            self._append_log(message)
+        elif line.startswith(USER_MARKER):
+            try:
+                user = json.loads(line[len(USER_MARKER) :])
+            except ValueError:
+                user = "?"
+            self._append_log(f"Syncing @{user}…")
+        else:
+            self._append_log(line)
+
+    def _sync_process_finished(self, exit_code: int, _exit_status) -> None:
+        process = self._sync_process
+        if process is None:
+            return
+        self._read_sync_output()
+        if self._sync_buffer.strip():
+            self._handle_sync_line(self._sync_buffer)
+            self._sync_buffer = ""
+        self._live_timer.stop()
+        self._sync_process = None
+        process.deleteLater()
+        self._set_busy(False, i18n.tr("Ready"))
+        self.refresh()
+        if self._sync_cancel_requested:
+            self.status_label.setText(i18n.tr("Sync cancelled"))
+        elif exit_code != 0 or self._sync_errors:
+            self.log_dock.show()
+            errors = self._sync_errors or [
+                f"sync helper exited with code {exit_code}"
+            ]
+            hint = ""
+            if any(
+                "AuthRequired" in error
+                or "authenticated cookies" in error
+                or "could not be decrypted" in error
+                for error in errors
+            ):
+                hint = "\n\n" + i18n.tr(
+                    "X rejected the cookies. Set Cookie keyring to GNOME keyring, "
+                    "or log in to x.com again in the browser."
+                )
+            QMessageBox.warning(
+                self,
+                i18n.tr("Sync finished with errors"),
+                "\n".join(errors[:3]) + ("\n…" if len(errors) > 3 else "") + hint,
+            )
+            self.status_label.setText(i18n.tr("Sync finished with errors"))
+        else:
+            self.status_label.setText(i18n.tr("Sync complete"))
+        self._sync_cancel_requested = False
+
+    def _sync_process_error(self, error) -> None:
+        if self._sync_process is None:
+            return
+        if error == QProcess.ProcessError.FailedToStart:
+            self._sync_errors.append("Failed to start sync helper")
+            self._append_log("Failed to start sync helper")
+            self._sync_process_finished(-1, QProcess.ExitStatus.CrashExit)
+        else:
+            self._append_log(f"Sync process error: {error}")
+
+    def _kill_sync(self) -> None:
+        if self._sync_process is not None:
+            self._sync_process.kill()
 
     def _find_duplicates(self) -> None:
         if self._busy:
@@ -601,8 +731,6 @@ class MainWindow(QMainWindow):
     def _thread_finished(self) -> None:
         worker = self._worker
         self._worker = None
-        self._live_timer.stop()
-        self._live_dirty = False
         self._set_busy(False, i18n.tr("Ready"))
         if worker is not None:
             worker.deleteLater()
@@ -626,13 +754,17 @@ class MainWindow(QMainWindow):
         self.refresh()
 
     def _stop(self) -> None:
+        if self._sync_process is not None:
+            self.status_label.setText(i18n.tr("Stopping…"))
+            self._sync_cancel_requested = True
+            self.stop_action.setEnabled(False)
+            self._sync_process.terminate()
+            QTimer.singleShot(5000, self._kill_sync)
+            return
         if self._worker is None:
             return
         self.status_label.setText(i18n.tr("Stopping…"))
-        if isinstance(self._worker, SyncWorker):
-            self._worker.cancel()
-        else:
-            self._worker.requestInterruption()
+        self._worker.requestInterruption()
         self.stop_action.setEnabled(False)
 
     def _set_busy(self, busy: bool, label: str) -> None:
@@ -661,13 +793,7 @@ class MainWindow(QMainWindow):
         self._append_log(summary)
         self.status_label.setText(summary)
 
-    def _sync_imported(self, user: str, counts: dict) -> None:
-        self._live_dirty = True
-        if not self._live_timer.isActive():
-            self._live_timer.start()
-
     def _apply_live_import(self) -> None:
-        self._live_dirty = False
         kind, current = self._current_filter
         rows = db.fetch_assets(kind, current, self.search.text())
         known = self.model.existing_ids()
@@ -675,45 +801,6 @@ class MainWindow(QMainWindow):
         if new_rows:
             self.model.prepend_rows(new_rows)
             self.stack.setCurrentWidget(self.list_view)
-        if self._live_dirty and not self._live_timer.isActive():
-            self._live_timer.start()
-
-    def _sync_done(self, result: dict) -> None:
-        errors = []
-        for entry in result.get("results", []):
-            counts = entry.get("counts", {})
-            user = entry.get("user", "?")
-            self._append_log(
-                f"@{user}: {counts.get('downloaded', 0)} new, "
-                f"{counts.get('duplicate', 0)} duplicates, "
-                f"{counts.get('similar', 0)} similar, "
-                f"{counts.get('skipped', 0)} already indexed, "
-                f"{counts.get('failed', 0)} failed"
-            )
-            if entry.get("error"):
-                errors.append(f"@{user}: {entry['error']}")
-        if result.get("cancelled"):
-            self.status_label.setText(i18n.tr("Sync cancelled"))
-        elif errors:
-            self.log_dock.show()
-            hint = ""
-            if any(
-                "AuthRequired" in error
-                or "authenticated cookies" in error
-                or "could not be decrypted" in error
-                for error in errors
-            ):
-                hint = "\n\n" + i18n.tr(
-                    "X rejected the cookies. Set Cookie keyring to GNOME keyring, "
-                    "or log in to x.com again in the browser."
-                )
-            QMessageBox.warning(
-                self,
-                i18n.tr("Sync finished with errors"),
-                "\n".join(errors[:3]) + ("\n…" if len(errors) > 3 else "") + hint,
-            )
-        else:
-            self.status_label.setText(i18n.tr("Sync complete"))
 
     def _worker_failed(self, message: str) -> None:
         self._append_log(f"Error: {message}")
@@ -885,7 +972,7 @@ class MainWindow(QMainWindow):
         self.settings.setValue("splitter", self.splitter.saveState())
 
     def closeEvent(self, event) -> None:  # noqa: N802
-        if self._busy and self._worker is not None:
+        if self._busy:
             answer = QMessageBox.question(
                 self,
                 i18n.tr("Stop task?"),
@@ -894,7 +981,17 @@ class MainWindow(QMainWindow):
             if answer != QMessageBox.StandardButton.Yes:
                 event.ignore()
                 return
-            self._stop()
-            self._worker.wait(4000)
+            self._sync_cancel_requested = True
+            process = self._sync_process
+            if process is not None:
+                process.terminate()
+                if not process.waitForFinished(4000):
+                    process.kill()
+                    process.waitForFinished(1000)
+                self._sync_process = None
+            self._live_timer.stop()
+            if self._worker is not None:
+                self._worker.requestInterruption()
+                self._worker.wait(4000)
         self._save_state()
         event.accept()

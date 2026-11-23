@@ -41,6 +41,8 @@ install -Dm644 packaging/wallkeep.desktop ~/.local/share/applications/wallkeep.d
 
 同步过程中，每张图片及其 JSON sidecar 写完后会立即导入 SQLite；界面约每 1.5 秒批量插入新图，不重建整个视图，侧栏计数在同步结束时汇总刷新。新图片出现在列表顶部。
 
+同步运行在独立的 `wallkeep.sync_cli` 进程里，Qt 主进程只读取日志和 SQLite；即使下载/导入 helper 崩溃，主窗口也不会一起退出。
+
 X 的 Web 接口和 GraphQL query id 会变化；下载层使用 `gallery-dl`，升级它即可跟上变化：
 
 ```bash

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import queue
 import re
 import shlex
@@ -32,6 +33,9 @@ def normalize_user(value: str) -> str:
 
 
 def gallery_dl_executable() -> str:
+    override = os.environ.get("WALLKEEP_GALLERY_DL")
+    if override:
+        return override
     candidate = Path(sys.executable).with_name("gallery-dl")
     if candidate.exists():
         return str(candidate)
