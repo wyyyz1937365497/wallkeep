@@ -22,8 +22,8 @@ makedepends=(
     'python-wheel'
     'python-hatchling'
 )
-source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
-sha256sums=('SKIP')
+source=("$pkgname-$pkgver.tar.gz::$url/releases/download/v$pkgver/$pkgname-$pkgver.tar.gz")
+sha256sums=('8dbe0e9708a72ad9510417966af3e39eb7260157593647d6ef50e6f7cde4cedc')
 
 build() {
     cd "$pkgname-$pkgver"
