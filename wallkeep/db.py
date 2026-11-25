@@ -78,7 +78,8 @@ DEFAULT_SETTINGS = {
     "rotation_mode": "shuffle",
     "rotation_scope": "all",
     "rotation_include_videos": "1",
-    "wallpaper_fill_mode": "cover",
+    "wallpaper_fill_mode": "auto",
+    "fill_mode_auto_migrated": "0",
     "wallpaper_current_id": "",
     "wallpaper_current_path": "",
     "shell_theme_monochrome": "0",
@@ -105,6 +106,21 @@ def init_db(path: Path = paths.DB_PATH) -> None:
         for key, value in DEFAULT_SETTINGS.items():
             connection.execute(
                 "INSERT OR IGNORE INTO settings(key, value) VALUES (?, ?)", (key, value)
+            )
+        marker = connection.execute(
+            "SELECT value FROM settings WHERE key = 'fill_mode_auto_migrated'"
+        ).fetchone()
+        if marker is None or marker["value"] != "1":
+            current = connection.execute(
+                "SELECT value FROM settings WHERE key = 'wallpaper_fill_mode'"
+            ).fetchone()
+            if current is not None and current["value"] == "cover":
+                connection.execute(
+                    "UPDATE settings SET value = 'auto' WHERE key = 'wallpaper_fill_mode'"
+                )
+            connection.execute(
+                "INSERT INTO settings(key, value) VALUES ('fill_mode_auto_migrated', '1') "
+                "ON CONFLICT(key) DO UPDATE SET value = '1'"
             )
 
 

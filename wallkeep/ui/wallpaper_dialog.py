@@ -90,13 +90,14 @@ class WallpaperDialog(QDialog):
         )
         rotation_form.addRow(self.include_videos)
         self.fill_mode = QComboBox()
-        self.fill_mode.addItem("Cover (crop)", "cover")
-        self.fill_mode.addItem("Fit with blurred background", "fit_blur")
+        self.fill_mode.addItem("Fit, blurred fill (no crop)", "auto")
         fill_index = self.fill_mode.findData(db.get_setting("wallpaper_fill_mode", "cover"))
         self.fill_mode.setCurrentIndex(fill_index if fill_index >= 0 else 0)
         self.fill_mode.setToolTip(
-            "Fit-blur is rendered as a PNG only when applied (no JPEG "
-            "recompression); no wallpaper cache is pre-generated."
+            "The whole image is shown without cropping or stretching. "
+            "Remaining space is blurred: portrait and narrow images get side "
+            "fill, wide landscape gets top/bottom fill. The PNG is generated "
+            "only when applied, not pre-generated."
         )
         rotation_form.addRow("Image fit", self.fill_mode)
         layout.addWidget(rotation_box)

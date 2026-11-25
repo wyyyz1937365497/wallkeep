@@ -61,8 +61,8 @@ def monitor_size() -> tuple[int, int]:
     return 1920, 1080
 
 
-def _fit_blur_size() -> tuple[int, int]:
-    width, height = monitor_size()
+def _fit_blur_size(screen: tuple[int, int] | None = None) -> tuple[int, int]:
+    width, height = screen or monitor_size()
     try:
         zoom = float(shell.current().get("zoom", 1.07))
     except (TypeError, ValueError):
@@ -72,20 +72,23 @@ def _fit_blur_size() -> tuple[int, int]:
     factor = max(1.0, zoom)
     return max(1, round(width * factor)), max(1, round(height * factor))
 
-def render_fit_blur(source: Path, size: tuple[int, int]) -> Path:
+def render_fit_blur(
+    source: Path, size: tuple[int, int], foreground_size: tuple[int, int] | None = None
+) -> Path:
     """Render a fit-with-blurred-background PNG on demand.
 
-    The foreground keeps the source's pixels apart from the downscale needed
-    to fit the target; the border is a blurred cover copy. PNG avoids JPEG
-    recompression.
+    The foreground is fitted inside ``foreground_size`` (the visible screen),
+    while the canvas is the parallax-sized ``size``. Portrait images therefore
+    keep their full height, with blurred space on the left and right.
     """
     directory = paths.CACHE_DIR / "wallpapers"
     directory.mkdir(parents=True, exist_ok=True)
     destination = directory / f"fit-blur-{time.time_ns()}.png"
     temporary = destination.with_name(destination.name + ".tmp")
+    fit_size = foreground_size or size
     with Image.open(source) as original:
         image = ImageOps.exif_transpose(original).convert("RGB")
-        foreground = ImageOps.contain(image, size, Image.Resampling.LANCZOS)
+        foreground = ImageOps.contain(image, fit_size, Image.Resampling.LANCZOS)
         if foreground.size == size:
             canvas = foreground
         else:
@@ -128,13 +131,18 @@ def set_wallpaper(path: Path, fill_mode: str = "cover") -> str:
     apply_path = path
     generated: Path | None = None
     suffix = path.suffix.lower()
+    if fill_mode in {"auto", "cover"} and suffix not in VIDEO_EXTS and suffix not in ANIMATED_EXTS:
+        # Fit every image, regardless of orientation. The foreground keeps its
+        # aspect ratio; only the blurred background is cropped to fill.
+        fill_mode = "fit_blur"
     if (
         fill_mode == "fit_blur"
         and suffix not in VIDEO_EXTS
         and suffix not in ANIMATED_EXTS
     ):
         try:
-            generated = render_fit_blur(path, _fit_blur_size())
+            screen = monitor_size()
+            generated = render_fit_blur(path, _fit_blur_size(screen), screen)
             apply_path = generated
         except Exception:
             apply_path = path

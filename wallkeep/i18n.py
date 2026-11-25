@@ -178,6 +178,8 @@ ZH = {
     "Download videos too (requires yt-dlp)": "同时下载视频（需要 yt-dlp）",
     "Videos need mpvpaper and the end-4 quickshell wallpaper service.": "视频需要 mpvpaper 和 end-4 的 quickshell 壁纸服务。",
     "Fit-blur is rendered as a PNG only when applied (no JPEG recompression); no wallpaper cache is pre-generated.": "完整显示+模糊背景只在应用时生成 PNG（不做 JPEG 二次压缩），不预生成壁纸缓存。",
+    "Fit, blurred fill (no crop)": "完整显示，模糊填充（不裁剪）",
+    "The whole image is shown without cropping or stretching. Remaining space is blurred: portrait and narrow images get side fill, wide landscape gets top/bottom fill. The PNG is generated only when applied, not pre-generated.": "完整显示图片，不裁剪、不拉伸。剩余空间用模糊填充：竖图和窄图左右填充，宽横图上下填充。PNG 只在应用时生成，不预生成。",
     "Copy path": "复制路径",
     "Delete…": "删除…",
     "Moved {count} images to the trash.": "已将 {count} 张图片移到回收站。",
