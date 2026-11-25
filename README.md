@@ -1,6 +1,6 @@
 # Wallkeep
 
-本地优先的原生壁纸库：索引、浏览、搜索、分类、去重本地图片，并可选同步 X 用户的媒体时间线。
+本地优先的原生壁纸库：索引、浏览、搜索、分类、去重本地图片/视频，可选同步 X 媒体时间线，并支持壁纸轮换与 end-4 shell 效果。
 
 **下载能力来自 [gallery-dl](https://codeberg.org/mikf/gallery-dl)，不是 Wallkeep。** Wallkeep 不实现 X 抓取、GraphQL 客户端、Cookie 提取/解密或媒体下载；可选的 X 同步只是调用 gallery-dl，并把下载结果纳入本地壁纸库管理。项目本质是本地壁纸管理的延伸。
 
@@ -14,8 +14,13 @@
 
 ## 功能
 
-- **本地壁纸索引**：导入已有文件夹，原地索引，不移动/复制原文件。
-- **可选 X 同步（下载由 gallery-dl 完成）**：通过 `gallery-dl` 读取浏览器 Cookie，下载 `x.com/<user>/media` 的图片时间线；支持增量同步、代理。
+- **本地壁纸索引**：导入已有文件夹，原地索引，不移动/复制原文件；支持图片和视频（mp4/webm/mkv/avi/mov），视频缩略图由 ffmpeg 生成。
+- **可选 X 同步（下载由 gallery-dl 完成）**：通过 `gallery-dl` 读取浏览器 Cookie，下载 `x.com/<user>/media` 的图片时间线；可勾选同时下载视频（需要 yt-dlp）；支持增量同步、代理。
+- **壁纸轮换**：按间隔随机/顺序切换，范围可选全部、收藏或本地文件；由 systemd user service 在登录后运行。
+- **收藏与轮换池**：右键加入收藏，侧栏可只看收藏；轮换范围可直接选择收藏。
+- **图片适配**：`cover` 裁剪填充，或 `fit_blur` 完整显示图片、空白区域用同一张图的放大高斯模糊版本填充。
+- **end-4 shell 效果**：在壁纸轮换对话框中切换单色主题、工作区视差、视差缩放、垂直/侧栏视差，并写回 quickshell 配置。
+- **动态壁纸**：视频入库后可设为壁纸并参与轮换；实际播放由 end-4 quickshell + mpvpaper 完成。
 - **精确去重**：SHA-256，同一文件无论来自本地还是 X 都只保留一份。
 - **感知去重**：64 位 DCT pHash（Hamming 距离）+ 宽高比守卫，识别被反复转发、缩放、重压缩的同一张图；重复的 X 媒体只记录来源，不落第二份文件。
 - **SQLite 图库**：媒体路径、来源、尺寸、哈希、同步游标和去重信息统一保存。
@@ -31,13 +36,16 @@ uv sync          # pyproject 已把默认 PyPI 索引设为 USTC 镜像
 uv run wallkeep
 ```
 
-系统要求：Linux、Python 3.11+、`gallery-dl`（由 `uv sync` 安装）。
+系统要求：Linux、Python 3.11+、`gallery-dl`（由 `uv sync` 安装）、`ffmpeg`（视频探测与缩略图）。
+可选：`mpvpaper`（动态视频壁纸）、`yt-dlp`（X 视频下载）、`quickshell`/`matugen`/`imagemagick`（end-4 壁纸切换与取色）。
 
 ### 发行包
 
 - **Debian/Ubuntu**（trixie 及更新）：从 [Releases](https://github.com/wyyyz1937365497/wallkeep/releases/latest) 下载 `wallkeep_0.1.0_all.deb`，然后
   `sudo apt install ./wallkeep_0.1.0_all.deb`。
 - **Arch Linux**：AUR 配置在 `packaging/aur/`；发布到 AUR 需要先给 AUR 账户注册 SSH key。也可以下载 Release 里的 `PKGBUILD` + `wallkeep-0.1.0.tar.gz`，放在同一目录后 `makepkg -si`。
+
+> 当前源码新增的视频、收藏、轮换和 shell 效果尚未包含在 0.1.0 发行包中；从源码运行 `uv run wallkeep` 即可使用。
 
 如果希望从桌面启动并让 XDG portal 识别应用 ID：
 
@@ -52,6 +60,7 @@ install -Dm644 packaging/wallkeep.desktop ~/.local/share/applications/wallkeep.d
 2. 点击“添加 X 用户…”，输入用户名（不含 `@`），选择你登录的浏览器。
 3. 如果直连 X 需要代理，在“设置”或添加用户对话框里填写（例如 `http://127.0.0.1:7890`）。
 4. 同步时 `gallery-dl` 会从浏览器读取 Cookie；Wallkeep 不保存密码或 Cookie 值。
+5. 添加用户时可勾选“同时下载视频”；视频下载依赖 `yt-dlp`，并在入库时用 ffmpeg 生成缩略图。
 
 同步过程中，每张图片及其 JSON sidecar 写完后会立即导入 SQLite；界面约每 1.5 秒批量插入新图，不重建整个视图，侧栏计数在同步结束时汇总刷新。新图片出现在列表顶部。
 
@@ -76,6 +85,24 @@ Chromium 系浏览器会用系统钥匙串加密 Cookie。Wallkeep 默认对 Chr
 Wallkeep 不保存密码或 Cookie 值；同步时由 `gallery-dl` 读取。
 
 请遵守 X 的服务条款，控制同步频率，只下载你有权保存的内容。
+
+## 壁纸轮换与 shell 效果
+
+点击工具栏“壁纸轮换…”（`Ctrl+Shift+W`）：
+
+- 勾选“自动轮换壁纸”，设置间隔、随机/顺序、轮换范围（全部/收藏/本地）和是否包含视频。
+- “图片适配”选择 `Cover (crop)` 或 `Fit with blurred background`；后者在应用图片时于 `~/.cache/wallkeep/wallpapers/` 生成合成图，原文件不变。
+- “立即切换下一张”立即应用一次，不需要等 systemd 定时器。
+- 保存时会写入 `~/.config/systemd/user/wallkeep-rotate.service`，并通过 `systemctl --user` 启用/停用；服务只读取 SQLite，不依赖 GUI 常驻。
+- Shell 效果会写回 `~/.config/illogical-impulse/config.json`：单色主题、工作区视差、视差缩放、垂直/侧栏视差。单色主题切换后会重新应用当前壁纸以刷新取色。
+
+手动触发一次轮换：
+
+```bash
+uv run python -m wallkeep.rotate --once
+```
+
+视频壁纸需要 `mpvpaper` 和 end-4 的 quickshell 壁纸服务；缺少时设置会报错，但图片轮换不受影响。
 
 ## 去重规则
 
@@ -104,6 +131,7 @@ Wallkeep 不保存密码或 Cookie 值；同步时由 `gallery-dl` 读取。
 | gallery-dl archive | `~/.local/share/wallkeep/archives/` |
 | 下载暂存 | `~/.local/share/wallkeep/staging/` |
 | 缩略图缓存 | `~/.cache/wallkeep/thumbs/` |
+| fit_blur 合成缓存 | `~/.cache/wallkeep/wallpapers/` |
 | X 下载目录 | 默认 `~/Pictures/wallkeep`，可在设置里修改 |
 
 本地文件夹只建立索引；X 媒体会移动到下载目录的 `x/<user>/` 下。
@@ -116,10 +144,10 @@ Wallkeep 不保存密码或 Cookie 值；同步时由 `gallery-dl` 读取。
 
 ## 已知限制
 
-- 目前只入库图片（jpg/jpeg/png/webp）；视频和 GIF 不进入壁纸库。
-- X 登录依赖浏览器 Cookie，Cookie 过期后需要重新登录再同步。
+- 视频支持入库、缩略图、收藏和轮换；动态播放依赖 `mpvpaper`。GIF 按图片入库并原样交给 shell，不生成 fit_blur 合成。
+- `fit_blur` 合成图按最大显示器分辨率生成；多显示器宽高比差异很大时，非最大屏幕可能出现轻微裁切。
+- X 视频下载依赖 `yt-dlp`，X 登录依赖浏览器 Cookie；Cookie 过期后需要重新登录再同步。
 - 近似去重是保守策略：裁切比例较大的转发图可能不会被合并。
-- 暂无重复项人工复核界面；匹配记录已写入数据库，后续可加。
 
 ## License
 

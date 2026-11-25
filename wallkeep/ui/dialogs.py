@@ -5,6 +5,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -69,10 +70,13 @@ class AddUserDialog(QDialog):
         self.keyring = _keyring_combo(db.get_setting("cookies_keyring", "gnomekeyring"))
         self.proxy = QLineEdit(db.get_setting("proxy", ""))
         self.proxy.setPlaceholderText("http://127.0.0.1:7890 (optional)")
+        self.videos = QCheckBox("Download videos too (requires yt-dlp)")
+        self.videos.setChecked(db.get_setting("x_include_videos", "0") == "1")
         form.addRow("X username", self.username)
         form.addRow("Cookie source", self.browser)
         form.addRow("Cookie keyring", self.keyring)
         form.addRow("Proxy", self.proxy)
+        form.addRow(self.videos)
         layout.addLayout(form)
 
         note = QLabel(
@@ -109,6 +113,7 @@ class AddUserDialog(QDialog):
             "browser": self.browser.currentData(),
             "keyring": self.keyring.currentData(),
             "proxy": self.proxy.text().strip(),
+            "include_videos": "1" if self.videos.isChecked() else "0",
         }
 
 

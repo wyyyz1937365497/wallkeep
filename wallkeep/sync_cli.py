@@ -18,6 +18,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--browser", default="firefox")
     parser.add_argument("--keyring", default="gnomekeyring")
     parser.add_argument("--proxy", default="")
+    parser.add_argument("--include-videos", action="store_true")
     args = parser.parse_args(argv)
 
     cancel = threading.Event()
@@ -32,7 +33,8 @@ def main(argv: list[str] | None = None) -> int:
         browser=args.browser,
         keyring=args.keyring,
         proxy=args.proxy,
-        image_only=True,
+        image_only=not args.include_videos,
+        include_videos=args.include_videos,
     )
     errors: list[str] = []
     for user in args.user:

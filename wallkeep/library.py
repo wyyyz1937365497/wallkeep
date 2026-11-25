@@ -16,7 +16,17 @@ from PIL import Image, ImageOps
 from . import db, paths
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".avif", ".bmp", ".gif"}
-GALLERY_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
+VIDEO_EXTS = {".mp4", ".webm", ".mkv", ".avi", ".mov"}
+MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
+GALLERY_EXTS = {".jpg", ".jpeg", ".png", ".webp"} | VIDEO_EXTS
+
+VIDEO_MIME = {
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".mkv": "video/x-matroska",
+    ".avi": "video/x-msvideo",
+    ".mov": "video/quicktime",
+}
 
 MIME_BY_FORMAT = {
     "JPEG": "image/jpeg",
@@ -28,7 +38,11 @@ MIME_BY_FORMAT = {
 }
 
 
-def iter_images(root: Path):
+def is_video(path: Path) -> bool:
+    return Path(path).suffix.lower() in VIDEO_EXTS
+
+
+def iter_media(root: Path):
     root = Path(root)
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [name for name in dirnames if not name.startswith(".")]
@@ -36,8 +50,47 @@ def iter_images(root: Path):
             if name.startswith("."):
                 continue
             path = Path(dirpath) / name
-            if path.suffix.lower() in IMAGE_EXTS and path.is_file():
+            if path.suffix.lower() in MEDIA_EXTS and path.is_file():
                 yield path
+
+
+def probe_media(path: Path) -> tuple[int, int, str | None] | None:
+    if not is_video(path):
+        return probe_image(path)
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=width,height",
+                "-of",
+                "csv=s=x:p=0",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+        if result.returncode != 0:
+            return None
+        width, height = result.stdout.strip().splitlines()[0].split("x")
+        return int(width), int(height), VIDEO_MIME.get(path.suffix.lower())
+    except (OSError, ValueError, IndexError, subprocess.TimeoutExpired):
+        return None
+
+
+def media_hashes(path: Path, sha256: str) -> tuple[str | None, str | None]:
+    if not is_video(path):
+        return dhash(path), phash(path)
+    thumb = make_thumbnail(path, sha256)
+    if thumb is None:
+        return None, None
+    return dhash(thumb), phash(thumb)
 
 
 def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
@@ -161,6 +214,38 @@ def make_thumbnail(source: Path, sha256: str, size: int = 512) -> Path | None:
     destination = thumb_path(sha256)
     if destination.exists():
         return destination
+    if is_video(source):
+        try:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            temporary = destination.with_name(destination.stem + ".tmp.jpg")
+            result = subprocess.run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-loglevel",
+                    "error",
+                    "-i",
+                    str(source),
+                    "-frames:v",
+                    "1",
+                    "-vf",
+                    f"scale={size}:-2",
+                    "-q:v",
+                    "2",
+                    str(temporary),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+            if result.returncode == 0 and temporary.exists():
+                temporary.replace(destination)
+                return destination
+            temporary.unlink(missing_ok=True)
+            return None
+        except (OSError, subprocess.TimeoutExpired):
+            return None
     try:
         with Image.open(source) as image:
             image = ImageOps.exif_transpose(image)
@@ -195,7 +280,7 @@ def import_folder(
     if not root.is_dir():
         raise ValueError(f"not a directory: {root}")
 
-    files = list(iter_images(root))
+    files = list(iter_media(root))
     total = len(files)
     connection = db.connect(db_path)
     try:
@@ -215,12 +300,14 @@ def import_folder(
             if db.asset_by_sha(connection, sha256) is not None:
                 counts["duplicate"] += 1
                 continue
-            probe = probe_image(path)
+            probe = probe_media(path)
             if probe is None:
                 counts["failed"] += 1
                 continue
             width, height, mime = probe
             stat = path.stat()
+            make_thumbnail(path, sha256)
+            dhash_value, phash_value = media_hashes(path, sha256)
             asset_id, created = db.insert_asset(
                 connection,
                 sha256=sha256,
@@ -230,14 +317,13 @@ def import_folder(
                 size=stat.st_size,
                 mime=mime,
                 origin="local",
-                dhash=dhash(path),
-                phash=phash(path),
+                dhash=dhash_value,
+                phash=phash_value,
                 created_at=int(stat.st_mtime),
             )
             if not created:
                 counts["duplicate"] += 1
                 continue
-            make_thumbnail(path, sha256)
             counts["imported"] += 1
             if index % 25 == 0:
                 connection.commit()
@@ -331,7 +417,7 @@ def import_x_downloads(
     counts = {"downloaded": 0, "duplicate": 0, "similar": 0, "skipped": 0, "failed": 0}
     files = [
         path
-        for path in iter_images(staging)
+        for path in iter_media(staging)
         if path.suffix.lower() in GALLERY_EXTS and (ready is None or ready(path))
     ]
     connection = db.connect(db_path)
@@ -382,14 +468,15 @@ def import_x_downloads(
                 _remove_media(path)
                 continue
 
-            probe = probe_image(path)
+            probe = probe_media(path)
             if probe is None:
                 counts["failed"] += 1
                 if log:
-                    log(f"Skipping unreadable image: {path.name}")
+                    log(f"Skipping unreadable media: {path.name}")
                 continue
             width, height, mime = probe
-            phash_value = phash(path)
+            make_thumbnail(path, sha256)
+            dhash_value, phash_value = media_hashes(path, sha256)
             similar = _best_similar(candidates, phash_value, similar_threshold, width, height)
             if similar is not None:
                 candidate, distance = similar
@@ -443,7 +530,7 @@ def import_x_downloads(
                 size=destination.stat().st_size,
                 mime=mime,
                 origin="x",
-                dhash=dhash(destination),
+                dhash=dhash_value,
                 phash=phash_value,
             )
             db.add_source(
@@ -532,7 +619,13 @@ def scan_duplicates(
                 return []
             value = row.get("phash")
             if not value:
-                value = phash(Path(row["path"]))
+                if is_video(Path(row["path"])):
+                    thumb = thumb_path(row["sha256"])
+                    if not thumb.exists():
+                        make_thumbnail(Path(row["path"]), row["sha256"])
+                    value = phash(thumb) if thumb.exists() else None
+                else:
+                    value = phash(Path(row["path"]))
                 if value:
                     connection.execute(
                         "UPDATE assets SET phash = ? WHERE id = ?", (value, row["id"])

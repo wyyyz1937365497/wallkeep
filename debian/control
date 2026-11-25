@@ -27,9 +27,13 @@ Depends: python3 (>= 3.11),
          python3-secretstorage,
          python3-requests,
          gallery-dl,
+         ffmpeg,
+         imagemagick,
          libqt6svg6,
          qt6-wayland,
          ${misc:Depends}
+Recommends: mpvpaper,
+            yt-dlp
 Description: local-first wallpaper library with optional X sync
  Wallkeep indexes and browses local wallpaper collections, generates
  thumbnails, searches by source, detects exact and perceptual duplicates,

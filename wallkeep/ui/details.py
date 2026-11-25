@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import i18n
+from .. import i18n, library
 from .theme import theme_icon
 
 PREVIEW_SIZE = QSize(360, 250)
@@ -133,22 +133,38 @@ class DetailsPanel(QWidget):
             return
         self._asset = asset
         path = Path(asset["path"])
-        self.title.setText(path.name)
+        is_video = str(asset.get("mime") or "").startswith("video/")
+        self.title.setText(f"{path.name}  ▶" if is_video else path.name)
         self.title.setToolTip(str(path))
 
-        reader = QImageReader(str(path))
-        reader.setAutoTransform(True)
-        size = reader.size()
-        if size.isValid():
-            reader.setScaledSize(
-                size.scaled(PREVIEW_SIZE, Qt.AspectRatioMode.KeepAspectRatio)
-            )
-        image = reader.read()
-        if image.isNull():
-            self.preview.clear()
-            self.preview.setText(i18n.tr("Preview unavailable"))
+        if is_video:
+            thumb = library.thumb_path(str(asset["sha256"]))
+            pixmap = QPixmap(str(thumb)) if thumb.exists() else QPixmap()
+            if pixmap.isNull():
+                self.preview.clear()
+                self.preview.setText(i18n.tr("Preview unavailable"))
+            else:
+                self.preview.setPixmap(
+                    pixmap.scaled(
+                        PREVIEW_SIZE,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                )
         else:
-            self.preview.setPixmap(QPixmap.fromImage(image))
+            reader = QImageReader(str(path))
+            reader.setAutoTransform(True)
+            size = reader.size()
+            if size.isValid():
+                reader.setScaledSize(
+                    size.scaled(PREVIEW_SIZE, Qt.AspectRatioMode.KeepAspectRatio)
+                )
+            image = reader.read()
+            if image.isNull():
+                self.preview.clear()
+                self.preview.setText(i18n.tr("Preview unavailable"))
+            else:
+                self.preview.setPixmap(QPixmap.fromImage(image))
 
         self.dimensions.setText(f"{asset['width']} × {asset['height']}")
         self.file_size.setText(human_size(int(asset["bytes"])))

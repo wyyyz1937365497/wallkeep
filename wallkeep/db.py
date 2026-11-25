@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS assets (
     bytes INTEGER NOT NULL DEFAULT 0,
     mime TEXT,
     origin TEXT NOT NULL,
+    favorite INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL
 );
 
@@ -71,6 +72,21 @@ DEFAULT_SETTINGS = {
     "image_only": "1",
     "language": "auto",
     "similar_threshold": "8",
+    "x_include_videos": "0",
+    "rotation_enabled": "0",
+    "rotation_interval_minutes": "30",
+    "rotation_mode": "shuffle",
+    "rotation_scope": "all",
+    "rotation_include_videos": "1",
+    "wallpaper_fill_mode": "cover",
+    "wallpaper_current_id": "",
+    "wallpaper_current_path": "",
+    "shell_theme_monochrome": "0",
+    "shell_palette_before_mono": "",
+    "shell_parallax_workspace": "0",
+    "shell_parallax_zoom": "1.07",
+    "shell_parallax_vertical": "0",
+    "shell_parallax_sidebar": "0",
 }
 
 
@@ -97,6 +113,8 @@ def _migrate(connection: sqlite3.Connection) -> None:
     asset_columns = {row[1] for row in connection.execute("PRAGMA table_info(assets)")}
     if "phash" not in asset_columns:
         connection.execute("ALTER TABLE assets ADD COLUMN phash TEXT")
+    if "favorite" not in asset_columns:
+        connection.execute("ALTER TABLE assets ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0")
     source_columns = {row[1] for row in connection.execute("PRAGMA table_info(sources)")}
     for name, declaration in (
         ("match_asset_id", "INTEGER"),
@@ -263,7 +281,13 @@ def fetch_stats() -> dict[str, int]:
             "SELECT COUNT(DISTINCT a.id) FROM assets a "
             "JOIN sources s ON s.asset_id = a.id WHERE s.platform = 'x'"
         ).fetchone()[0]
-        return {"total": int(total), "local": int(local), "x": int(x)}
+        favorites = connection.execute("SELECT COUNT(*) FROM assets WHERE favorite = 1").fetchone()[0]
+        return {
+            "total": int(total),
+            "local": int(local),
+            "x": int(x),
+            "favorites": int(favorites),
+        }
 
 
 def fetch_users() -> list[dict[str, Any]]:
@@ -284,6 +308,8 @@ def fetch_assets(kind: str = "all", user: str | None = None, search: str = "") -
     params: list[Any] = []
     if kind == "local":
         clauses.append("a.origin = 'local'")
+    elif kind == "favorites":
+        clauses.append("a.favorite = 1")
     elif kind == "x":
         clauses.append("EXISTS (SELECT 1 FROM sources s WHERE s.asset_id = a.id AND s.platform = 'x')")
     if user:
@@ -325,3 +351,27 @@ def fetch_asset(asset_id: int) -> dict[str, Any] | None:
             (asset_id,),
         ).fetchone()
         return dict(row) if row else None
+
+
+def set_favorite(asset_id: int, favorite: bool) -> None:
+    with connect() as connection:
+        connection.execute(
+            "UPDATE assets SET favorite = ? WHERE id = ?",
+            (1 if favorite else 0, asset_id),
+        )
+
+
+def fetch_rotation_pool(scope: str = "all", include_videos: bool = True) -> list[dict[str, Any]]:
+    clauses: list[str] = []
+    if scope == "favorites":
+        clauses.append("a.favorite = 1")
+    elif scope == "local":
+        clauses.append("a.origin = 'local'")
+    if not include_videos:
+        clauses.append("(a.mime IS NULL OR a.mime NOT LIKE 'video/%')")
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    with connect() as connection:
+        rows = connection.execute(
+            f"SELECT a.* FROM assets a {where} ORDER BY a.id"
+        ).fetchall()
+        return [dict(row) for row in rows]

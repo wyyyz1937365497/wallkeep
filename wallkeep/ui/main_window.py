@@ -50,6 +50,7 @@ from .details import DetailsPanel
 from .dialogs import AddUserDialog, SettingsDialog
 from .duplicates import DuplicatesDialog
 from .model import AssetModel
+from .wallpaper_dialog import WallpaperDialog
 from .workers import DuplicateWorker, ImportWorker
 
 
@@ -123,6 +124,17 @@ class MainWindow(QMainWindow):
         )
         self.duplicates_action.triggered.connect(self._find_duplicates)
 
+        self.wallpaper_action = QAction(
+            self._icon("preferences-desktop-wallpaper", "video-display"),
+            "Wallpaper rotation…",
+            self,
+        )
+        self.wallpaper_action.setShortcut(QKeySequence("Ctrl+Shift+W"))
+        self.wallpaper_action.setStatusTip(
+            "Rotate wallpapers and adjust shell effects"
+        )
+        self.wallpaper_action.triggered.connect(self._open_wallpaper)
+
         self.settings_action = QAction(self._icon("configure"), "Settings", self)
         self.settings_action.setShortcut(QKeySequence("Ctrl+,"))
         self.settings_action.triggered.connect(self._open_settings)
@@ -154,6 +166,7 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self.sync_action)
         toolbar.addAction(self.stop_action)
         toolbar.addAction(self.duplicates_action)
+        toolbar.addAction(self.wallpaper_action)
         toolbar.addSeparator()
         toolbar.addAction(self.settings_action)
         spacer = QWidget(toolbar)
@@ -179,6 +192,7 @@ class MainWindow(QMainWindow):
         library_menu.addAction(self.sync_action)
         library_menu.addAction(self.stop_action)
         library_menu.addAction(self.duplicates_action)
+        library_menu.addAction(self.wallpaper_action)
         library_menu.addAction(self.reload_action)
         library_menu.addSeparator()
         library_menu.addAction(self.settings_action)
@@ -377,6 +391,14 @@ class MainWindow(QMainWindow):
                 self._icon("internet-web-browser"),
             )
         )
+        library_header.addChild(
+            self._filter_item(
+                i18n.trf("Favorites ({count})", count=stats["favorites"]),
+                "favorites",
+                None,
+                self._icon("emblem-favorite", "starred"),
+            )
+        )
 
         users_header = self._header_item(i18n.tr("X users"))
         self.tree.addTopLevelItem(users_header)
@@ -474,6 +496,12 @@ class MainWindow(QMainWindow):
             self.empty_label.setText(
                 i18n.tr("No X wallpapers yet.\nAdd an X user and sync their media timeline.")
             )
+        elif kind == "favorites":
+            self.empty_label.setText(
+                i18n.tr(
+                    "No favorites yet.\nRight-click a wallpaper and add it to favorites."
+                )
+            )
         else:
             self.empty_label.setText(
                 i18n.tr(
@@ -532,6 +560,7 @@ class MainWindow(QMainWindow):
         db.set_setting("cookies_browser", values["browser"])
         db.set_setting("cookies_keyring", values["keyring"])
         db.set_setting("proxy", values["proxy"])
+        db.set_setting("x_include_videos", values["include_videos"])
         self.sync_action.setStatusTip("Sync the selected X user, or all X users")
         self.refresh()
         self._select_filter("user", user)
@@ -571,6 +600,8 @@ class MainWindow(QMainWindow):
         proxy = db.get_setting("proxy", "").strip()
         if proxy:
             arguments += ["--proxy", proxy]
+        if db.get_setting("x_include_videos", "0") == "1":
+            arguments += ["--include-videos"]
         for entry in users:
             arguments += ["--user", entry]
         process.setArguments(arguments)
@@ -779,6 +810,7 @@ class MainWindow(QMainWindow):
             self.add_user_action,
             self.sync_action,
             self.duplicates_action,
+            self.wallpaper_action,
             self.settings_action,
         ):
             action.setEnabled(not busy)
@@ -811,6 +843,11 @@ class MainWindow(QMainWindow):
         self._append_log(f"Error: {message}")
         self.log_dock.show()
         QMessageBox.critical(self, i18n.tr("Wallkeep error"), message)
+
+    def _open_wallpaper(self) -> None:
+        dialog = WallpaperDialog(self)
+        dialog.exec()
+        self.refresh()
 
     def _open_settings(self) -> None:
         dialog = SettingsDialog(self)
@@ -875,6 +912,11 @@ class MainWindow(QMainWindow):
         )
         open_action = menu.addAction(self._icon("document-open"), i18n.tr("Open"))
         folder_action = menu.addAction(self._icon("folder-open"), i18n.tr("Show in folder"))
+        favorite = bool(asset.get("favorite"))
+        favorite_action = menu.addAction(
+            self._icon("emblem-favorite", "starred"),
+            i18n.tr("Remove from favorites") if favorite else i18n.tr("Add to favorites"),
+        )
         menu.addSeparator()
         copy_action = menu.addAction(self._icon("edit-copy"), i18n.tr("Copy path"))
         menu.addSeparator()
@@ -883,7 +925,11 @@ class MainWindow(QMainWindow):
         )
         chosen = menu.exec(self.list_view.viewport().mapToGlobal(position))
         if chosen == wallpaper_action:
-            self._set_wallpaper(asset["path"])
+            self._set_wallpaper(asset["path"], asset)
+        elif chosen == favorite_action:
+            for selected in assets:
+                db.set_favorite(int(selected["id"]), not favorite)
+            self.refresh()
         elif chosen == open_action:
             self._open_path(asset["path"])
         elif chosen == folder_action:
@@ -936,12 +982,22 @@ class MainWindow(QMainWindow):
         if asset:
             self._open_path(asset["path"])
 
-    def _set_wallpaper(self, path: str) -> None:
+    def _set_wallpaper(self, path: str, asset: dict | None = None) -> None:
+        if asset is None:
+            current = self._current_asset()
+            if current is not None and current["path"] == path:
+                asset = current
+        fill_mode = db.get_setting("wallpaper_fill_mode", "cover")
         try:
-            method = wallpaper.set_wallpaper(Path(path))
+            method = wallpaper.set_wallpaper(
+                Path(path), fill_mode, str(asset["sha256"]) if asset else None
+            )
         except Exception as error:  # noqa: BLE001 - shown to the user
             QMessageBox.critical(self, i18n.tr("Could not set wallpaper"), str(error))
             return
+        if asset is not None:
+            db.set_setting("wallpaper_current_id", str(asset["id"]))
+            db.set_setting("wallpaper_current_path", str(asset["path"]))
         self.status_label.setText(i18n.trf("Wallpaper set via {method}", method=method))
         self._append_log(f"Wallpaper set: {path} ({method})")
 

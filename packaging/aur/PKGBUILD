@@ -14,7 +14,15 @@ depends=(
     'python-requests'
     'python-secretstorage'
     'gallery-dl'
+    'ffmpeg'
+    'imagemagick'
     'qt6-svg'
+)
+optdepends=(
+    'mpvpaper: dynamic video wallpapers'
+    'yt-dlp: download videos from X'
+    'quickshell: end-4 shell wallpaper switching'
+    'matugen: shell color generation'
 )
 makedepends=(
     'python-build'

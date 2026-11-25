@@ -22,6 +22,7 @@ class SyncOptions:
     keyring: str = "gnomekeyring"
     proxy: str = ""
     image_only: bool = True
+    include_videos: bool = False
 
 
 def normalize_user(value: str) -> str:
@@ -80,7 +81,12 @@ def sync_user(
         "-d",
         str(staging),
     ]
-    if options.image_only:
+    if options.include_videos:
+        command += [
+            "--filter",
+            "extension in ('jpg', 'jpeg', 'png', 'webp', 'mp4', 'webm', 'mov', 'mkv')",
+        ]
+    elif options.image_only:
         command += ["--filter", "extension in ('jpg', 'jpeg', 'png', 'webp')"]
     if options.proxy.strip():
         command += ["--proxy", options.proxy.strip()]
