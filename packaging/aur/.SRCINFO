@@ -24,6 +24,6 @@ pkgbase = wallkeep
 	optdepends = quickshell: end-4 shell wallpaper switching
 	optdepends = matugen: shell color generation
 	source = wallkeep-0.2.0.tar.gz::https://github.com/wyyyz1937365497/wallkeep/releases/download/v0.2.0/wallkeep-0.2.0.tar.gz
-	sha256sums = CHECKSUM_PLACEHOLDER
+	sha256sums = 5041ee9c7ca1f33f6a84457dc1662a9109babbf9c72097361a3bb2db0abd7e8a
 
 pkgname = wallkeep
