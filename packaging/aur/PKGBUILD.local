@@ -38,8 +38,9 @@ build() {
 
 package() {
     cd "$pkgname-$pkgver"
-    mkdir -p "$pkgdir/usr/lib/python3/dist-packages"
-    python -m zipfile -e dist/*.whl "$pkgdir/usr/lib/python3/dist-packages"
+    site=$(python -c 'import sysconfig; print(sysconfig.get_path("purelib"))')
+    install -d "$pkgdir$site"
+    python -m zipfile -e dist/*.whl "$pkgdir$site"
     install -d "$pkgdir/usr/bin"
     cat > "$pkgdir/usr/bin/wallkeep" <<'EOF'
 #!/usr/bin/python3
