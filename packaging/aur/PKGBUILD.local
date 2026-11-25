@@ -26,22 +26,30 @@ optdepends=(
     'matugen: shell color generation'
 )
 makedepends=(
-    'python-build'
-    'python-installer'
-    'python-wheel'
-    'python-hatchling'
+    'uv'
 )
 source=("$pkgname-$pkgver.tar.gz")
 sha256sums=('SKIP')
 
 build() {
     cd "$pkgname-$pkgver"
-    python -m build --wheel --no-isolation
+    uv build --wheel
 }
 
 package() {
     cd "$pkgname-$pkgver"
-    python -m installer --destdir="$pkgdir" dist/*.whl
+    mkdir -p "$pkgdir/usr/lib/python3/dist-packages"
+    python -m zipfile -e dist/*.whl "$pkgdir/usr/lib/python3/dist-packages"
+    install -d "$pkgdir/usr/bin"
+    cat > "$pkgdir/usr/bin/wallkeep" <<'EOF'
+#!/usr/bin/python3
+import sys
+from wallkeep.app import main
+
+if __name__ == "__main__":
+    sys.exit(main())
+EOF
+    chmod 755 "$pkgdir/usr/bin/wallkeep"
     install -Dm644 packaging/wallkeep.desktop \
         "$pkgdir/usr/share/applications/wallkeep.desktop"
 }
