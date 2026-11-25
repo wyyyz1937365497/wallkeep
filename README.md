@@ -41,11 +41,32 @@ uv run wallkeep
 
 ### 发行包
 
-- **Debian/Ubuntu**（trixie 及更新）：从 [Releases](https://github.com/wyyyz1937365497/wallkeep/releases/latest) 下载 `wallkeep_0.1.0_all.deb`，然后
-  `sudo apt install ./wallkeep_0.1.0_all.deb`。
-- **Arch Linux**：AUR 配置在 `packaging/aur/`；发布到 AUR 需要先给 AUR 账户注册 SSH key。也可以下载 Release 里的 `PKGBUILD` + `wallkeep-0.1.0.tar.gz`，放在同一目录后 `makepkg -si`。
+- **Debian/Ubuntu**（trixie 及更新）：从 [Releases](https://github.com/wyyyz1937365497/wallkeep/releases/latest) 下载 `wallkeep_0.2.0_all.deb`，然后
+  `sudo apt install ./wallkeep_0.2.0_all.deb`。
+- **Arch Linux**：AUR 新用户注册目前暂停，暂未发布到 AUR；可以按下面的“本地 AUR 安装”直接在本机打成 pacman 包。
 
-> 当前源码新增的视频、收藏、轮换和 shell 效果尚未包含在 0.1.0 发行包中；从源码运行 `uv run wallkeep` 即可使用。
+### 本地 AUR 安装（未发布到 AUR）
+
+```bash
+git clone https://github.com/wyyyz1937365497/wallkeep.git
+cd wallkeep
+version=0.2.0
+git archive --format=tar.gz --prefix=wallkeep-$version/ \
+  -o /tmp/wallkeep-$version.tar.gz HEAD
+mkdir -p ~/aur/wallkeep
+cp packaging/aur/PKGBUILD.local ~/aur/wallkeep/PKGBUILD
+cp /tmp/wallkeep-$version.tar.gz ~/aur/wallkeep/
+cd ~/aur/wallkeep
+makepkg -si
+```
+
+`makepkg -si` 会安装构建依赖、构建并安装 `wallkeep`；安装后可以直接运行 `wallkeep`，桌面入口也会出现。卸载：
+
+```bash
+sudo pacman -Rns wallkeep
+```
+
+这个本地包和 `PKGBUILD` 与未来 AUR 版本使用同一套打包逻辑，只是 `source` 指向本地源码 tarball。
 
 如果希望从桌面启动并让 XDG portal 识别应用 ID：
 

@@ -35,9 +35,10 @@ Depends: python3 (>= 3.11),
 Recommends: mpvpaper,
             yt-dlp
 Description: local-first wallpaper library with optional X sync
- Wallkeep indexes and browses local wallpaper collections, generates
- thumbnails, searches by source, detects exact and perceptual duplicates,
- and can set wallpapers through the desktop environment.
+ Wallkeep indexes and browses local image/video wallpaper collections,
+ generates thumbnails, searches by source, detects exact and perceptual
+ duplicates, rotates wallpapers and can set them through the desktop
+ environment.
  .
  Optional X timeline sync is downloaded by gallery-dl. Wallkeep does not
  implement X scraping, GraphQL clients, cookie extraction or the downloader

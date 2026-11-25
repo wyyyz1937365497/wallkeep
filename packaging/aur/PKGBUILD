@@ -1,6 +1,6 @@
 # Maintainer: Wang Yinyou <140365984+wyyyz1937365497@users.noreply.github.com>
 pkgname=wallkeep
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="Local-first wallpaper library; optional X sync is downloaded by gallery-dl"
 arch=('any')
@@ -31,7 +31,7 @@ makedepends=(
     'python-hatchling'
 )
 source=("$pkgname-$pkgver.tar.gz::$url/releases/download/v$pkgver/$pkgname-$pkgver.tar.gz")
-sha256sums=('8dbe0e9708a72ad9510417966af3e39eb7260157593647d6ef50e6f7cde4cedc')
+sha256sums=('CHECKSUM_PLACEHOLDER')
 
 build() {
     cd "$pkgname-$pkgver"

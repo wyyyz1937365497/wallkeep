@@ -1,3 +1,14 @@
+wallkeep (0.2.0-1) unstable; urgency=medium
+
+  * Add video indexing, thumbnails and dynamic wallpaper support.
+  * Add favorites, wallpaper rotation, fit-with-blur compositing and
+    end-4 shell effect controls.
+  * Render fit-blur wallpapers losslessly on demand, without cropping or
+    stretching the foreground.
+  * Add local AUR packaging instructions and update dependencies.
+
+ -- Wang Yinyou <140365984+wyyyz1937365497@users.noreply.github.com>  Tue, 25 Nov 2026 12:00:00 +0800
+
 wallkeep (0.1.0-1) unstable; urgency=medium
 
   * Initial release.

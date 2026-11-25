@@ -1,6 +1,6 @@
 pkgbase = wallkeep
 	pkgdesc = Local-first wallpaper library; optional X sync is downloaded by gallery-dl
-	pkgver = 0.1.0
+	pkgver = 0.2.0
 	pkgrel = 1
 	url = https://github.com/wyyyz1937365497/wallkeep
 	arch = any
@@ -23,7 +23,7 @@ pkgbase = wallkeep
 	optdepends = yt-dlp: download videos from X
 	optdepends = quickshell: end-4 shell wallpaper switching
 	optdepends = matugen: shell color generation
-	source = wallkeep-0.1.0.tar.gz::https://github.com/wyyyz1937365497/wallkeep/releases/download/v0.1.0/wallkeep-0.1.0.tar.gz
-	sha256sums = 8dbe0e9708a72ad9510417966af3e39eb7260157593647d6ef50e6f7cde4cedc
+	source = wallkeep-0.2.0.tar.gz::https://github.com/wyyyz1937365497/wallkeep/releases/download/v0.2.0/wallkeep-0.2.0.tar.gz
+	sha256sums = CHECKSUM_PLACEHOLDER
 
 pkgname = wallkeep
