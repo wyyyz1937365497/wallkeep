@@ -989,9 +989,7 @@ class MainWindow(QMainWindow):
                 asset = current
         fill_mode = db.get_setting("wallpaper_fill_mode", "cover")
         try:
-            method = wallpaper.set_wallpaper(
-                Path(path), fill_mode, str(asset["sha256"]) if asset else None
-            )
+            method = wallpaper.set_wallpaper(Path(path), fill_mode)
         except Exception as error:  # noqa: BLE001 - shown to the user
             QMessageBox.critical(self, i18n.tr("Could not set wallpaper"), str(error))
             return

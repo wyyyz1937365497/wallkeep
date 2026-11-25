@@ -94,6 +94,10 @@ class WallpaperDialog(QDialog):
         self.fill_mode.addItem("Fit with blurred background", "fit_blur")
         fill_index = self.fill_mode.findData(db.get_setting("wallpaper_fill_mode", "cover"))
         self.fill_mode.setCurrentIndex(fill_index if fill_index >= 0 else 0)
+        self.fill_mode.setToolTip(
+            "Fit-blur is rendered as a PNG only when applied (no JPEG "
+            "recompression); no wallpaper cache is pre-generated."
+        )
         rotation_form.addRow("Image fit", self.fill_mode)
         layout.addWidget(rotation_box)
 
@@ -168,6 +172,7 @@ class WallpaperDialog(QDialog):
 
     def _write_settings(self) -> bool:
         previous_fill = db.get_setting("wallpaper_fill_mode", "cover")
+        previous_zoom = db.get_setting("shell_parallax_zoom", "1.07")
         db.set_setting("rotation_enabled", "1" if self.rotation_enabled.isChecked() else "0")
         db.set_setting("rotation_interval_minutes", str(self.interval.value()))
         db.set_setting("rotation_mode", str(self.mode.currentData()))
@@ -196,7 +201,11 @@ class WallpaperDialog(QDialog):
         except OSError as error:
             QMessageBox.warning(self, i18n.tr("Could not update shell"), str(error))
             return False
-        if palette_changed or previous_fill != str(self.fill_mode.currentData()):
+        if (
+            palette_changed
+            or previous_fill != str(self.fill_mode.currentData())
+            or previous_zoom != f"{self.zoom.value():.2f}"
+        ):
             self._reapply_current()
         return True
 
@@ -208,9 +217,7 @@ class WallpaperDialog(QDialog):
             return
         try:
             wallpaper.set_wallpaper(
-                Path(asset["path"]),
-                str(self.fill_mode.currentData()),
-                str(asset["sha256"]),
+                Path(asset["path"]), str(self.fill_mode.currentData())
             )
         except Exception as error:  # noqa: BLE001 - shown to the user
             QMessageBox.warning(self, i18n.tr("Could not re-apply wallpaper"), str(error))

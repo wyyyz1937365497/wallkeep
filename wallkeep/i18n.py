@@ -177,6 +177,7 @@ ZH = {
     "systemctl failed": "systemctl 执行失败",
     "Download videos too (requires yt-dlp)": "同时下载视频（需要 yt-dlp）",
     "Videos need mpvpaper and the end-4 quickshell wallpaper service.": "视频需要 mpvpaper 和 end-4 的 quickshell 壁纸服务。",
+    "Fit-blur is rendered as a PNG only when applied (no JPEG recompression); no wallpaper cache is pre-generated.": "完整显示+模糊背景只在应用时生成 PNG（不做 JPEG 二次压缩），不预生成壁纸缓存。",
     "Copy path": "复制路径",
     "Delete…": "删除…",
     "Moved {count} images to the trash.": "已将 {count} 张图片移到回收站。",

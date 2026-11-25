@@ -1,26 +1,18 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 from PIL import Image, ImageFilter, ImageOps
 
-from . import paths
+from . import paths, shell
 
 VIDEO_EXTS = {".mp4", ".webm", ".mkv", ".avi", ".mov"}
 ANIMATED_EXTS = {".gif"}
-
-
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with open(path, "rb") as handle:
-        while chunk := handle.read(1024 * 1024):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _desktop_env() -> dict[str, str]:
@@ -69,15 +61,28 @@ def monitor_size() -> tuple[int, int]:
     return 1920, 1080
 
 
-def composite_path(source: Path, sha256: str, size: tuple[int, int]) -> Path:
-    return paths.CACHE_DIR / "wallpapers" / f"{sha256[:16]}_{size[0]}x{size[1]}.jpg"
+def _fit_blur_size() -> tuple[int, int]:
+    width, height = monitor_size()
+    try:
+        zoom = float(shell.current().get("zoom", 1.07))
+    except (TypeError, ValueError):
+        zoom = 1.07
+    # The shell displays the composite at 1:1 after accounting for parallax
+    # zoom. Matching that size avoids a second, possibly unsmoothed, QML scale.
+    factor = max(1.0, zoom)
+    return max(1, round(width * factor)), max(1, round(height * factor))
 
+def render_fit_blur(source: Path, size: tuple[int, int]) -> Path:
+    """Render a fit-with-blurred-background PNG on demand.
 
-def render_fit_blur(source: Path, sha256: str, size: tuple[int, int]) -> Path:
-    destination = composite_path(source, sha256, size)
-    if destination.exists():
-        return destination
-    destination.parent.mkdir(parents=True, exist_ok=True)
+    The foreground keeps the source's pixels apart from the downscale needed
+    to fit the target; the border is a blurred cover copy. PNG avoids JPEG
+    recompression.
+    """
+    directory = paths.CACHE_DIR / "wallpapers"
+    directory.mkdir(parents=True, exist_ok=True)
+    destination = directory / f"fit-blur-{time.time_ns()}.png"
+    temporary = destination.with_name(destination.name + ".tmp")
     with Image.open(source) as original:
         image = ImageOps.exif_transpose(original).convert("RGB")
         foreground = ImageOps.contain(image, size, Image.Resampling.LANCZOS)
@@ -86,42 +91,51 @@ def render_fit_blur(source: Path, sha256: str, size: tuple[int, int]) -> Path:
         else:
             small = (max(1, size[0] // 4), max(1, size[1] // 4))
             canvas = ImageOps.fit(image, small, Image.Resampling.LANCZOS)
-            canvas = canvas.filter(ImageFilter.GaussianBlur(8)).resize(
+            radius = max(8, int(min(size) / 160))
+            canvas = canvas.filter(ImageFilter.GaussianBlur(radius)).resize(
                 size, Image.Resampling.BILINEAR
             )
             canvas.paste(
                 foreground,
                 ((size[0] - foreground.width) // 2, (size[1] - foreground.height) // 2),
             )
-    temporary = destination.with_name(destination.stem + ".tmp.jpg")
-    canvas.save(temporary, "JPEG", quality=94, optimize=True)
+    canvas.save(temporary, "PNG", compress_level=6)
     temporary.replace(destination)
     return destination
 
 
-def set_wallpaper(
-    path: Path, fill_mode: str = "cover", sha256: str | None = None
-) -> str:
+def _cleanup_composites(keep: Path | None = None) -> None:
+    directory = paths.CACHE_DIR / "wallpapers"
+    if not directory.is_dir():
+        return
+    for path in directory.iterdir():
+        if not path.is_file() or (keep is not None and path == keep):
+            continue
+        if path.suffix.lower() in {".png", ".jpg"} or path.name.endswith(".tmp"):
+            path.unlink(missing_ok=True)
+
+
+def set_wallpaper(path: Path, fill_mode: str = "cover") -> str:
     """Apply a wallpaper through the running desktop stack.
 
-    Images in ``fit_blur`` mode are rendered as an aspect-fit foreground over a
-    blurred, enlarged copy of the same image. Videos/GIFs are passed through so
-    the shell can keep them animated.
+    ``fit_blur`` is rendered at apply time as a PNG (no JPEG recompression);
+    no wallpaper library is pre-generated. Switching away removes the old composite.
     """
     path = Path(path).expanduser().resolve()
     if not path.is_file():
         raise FileNotFoundError(path)
 
     apply_path = path
+    generated: Path | None = None
     suffix = path.suffix.lower()
     if (
         fill_mode == "fit_blur"
         and suffix not in VIDEO_EXTS
         and suffix not in ANIMATED_EXTS
     ):
-        digest = sha256 or _sha256_file(path)
         try:
-            apply_path = render_fit_blur(path, digest, monitor_size())
+            generated = render_fit_blur(path, _fit_blur_size())
+            apply_path = generated
         except Exception:
             apply_path = path
 
@@ -139,8 +153,12 @@ def set_wallpaper(
             continue
         ok, output = _run(command)
         if ok:
+            if name == "quickshell":
+                _cleanup_composites(generated)
             return name
         errors.append(f"{name}: {output or 'failed'}")
+    if generated is not None:
+        generated.unlink(missing_ok=True)
     if errors:
         raise RuntimeError("; ".join(errors))
     raise RuntimeError("no supported wallpaper backend found (quickshell, swww, hyprpaper)")

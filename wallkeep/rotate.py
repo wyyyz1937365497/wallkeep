@@ -28,9 +28,7 @@ def select_asset(
 
 def apply_asset(asset: dict) -> str:
     fill_mode = db.get_setting("wallpaper_fill_mode", "cover")
-    method = wallpaper.set_wallpaper(
-        Path(asset["path"]), fill_mode, str(asset.get("sha256") or "")
-    )
+    method = wallpaper.set_wallpaper(Path(asset["path"]), fill_mode)
     db.set_setting("wallpaper_current_id", str(asset["id"]))
     db.set_setting("wallpaper_current_path", str(asset["path"]))
     return method

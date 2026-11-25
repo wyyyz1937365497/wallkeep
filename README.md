@@ -18,7 +18,7 @@
 - **可选 X 同步（下载由 gallery-dl 完成）**：通过 `gallery-dl` 读取浏览器 Cookie，下载 `x.com/<user>/media` 的图片时间线；可勾选同时下载视频（需要 yt-dlp）；支持增量同步、代理。
 - **壁纸轮换**：按间隔随机/顺序切换，范围可选全部、收藏或本地文件；由 systemd user service 在登录后运行。
 - **收藏与轮换池**：右键加入收藏，侧栏可只看收藏；轮换范围可直接选择收藏。
-- **图片适配**：`cover` 裁剪填充，或 `fit_blur` 完整显示图片、空白区域用同一张图的放大高斯模糊版本填充。
+- **图片适配**：`cover` 裁剪填充，或 `fit_blur` 完整显示图片、空白区域用同一张图的放大高斯模糊版本填充；`fit_blur` 只在应用时生成一张 PNG（无 JPEG 二次压缩），不预生成壁纸缓存，切换后清理旧合成图。
 - **end-4 shell 效果**：在壁纸轮换对话框中切换单色主题、工作区视差、视差缩放、垂直/侧栏视差，并写回 quickshell 配置。
 - **动态壁纸**：视频入库后可设为壁纸并参与轮换；实际播放由 end-4 quickshell + mpvpaper 完成。
 - **精确去重**：SHA-256，同一文件无论来自本地还是 X 都只保留一份。
@@ -91,7 +91,7 @@ Wallkeep 不保存密码或 Cookie 值；同步时由 `gallery-dl` 读取。
 点击工具栏“壁纸轮换…”（`Ctrl+Shift+W`）：
 
 - 勾选“自动轮换壁纸”，设置间隔、随机/顺序、轮换范围（全部/收藏/本地）和是否包含视频。
-- “图片适配”选择 `Cover (crop)` 或 `Fit with blurred background`；后者在应用图片时于 `~/.cache/wallkeep/wallpapers/` 生成合成图，原文件不变。
+- “图片适配”选择 `Cover (crop)` 或 `Fit with blurred background`；后者只在应用时于 `~/.cache/wallkeep/wallpapers/` 生成一张 PNG（按显示器分辨率 × 视差缩放精确生成，Pillow LANCZOS 缩放；无 JPEG 二次压缩），不预生成缓存，切换后清理旧图，原文件不变。
 - “立即切换下一张”立即应用一次，不需要等 systemd 定时器。
 - 保存时会写入 `~/.config/systemd/user/wallkeep-rotate.service`，并通过 `systemctl --user` 启用/停用；服务只读取 SQLite，不依赖 GUI 常驻。
 - Shell 效果会写回 `~/.config/illogical-impulse/config.json`：单色主题、工作区视差、视差缩放、垂直/侧栏视差。单色主题切换后会重新应用当前壁纸以刷新取色。
@@ -131,7 +131,7 @@ uv run python -m wallkeep.rotate --once
 | gallery-dl archive | `~/.local/share/wallkeep/archives/` |
 | 下载暂存 | `~/.local/share/wallkeep/staging/` |
 | 缩略图缓存 | `~/.cache/wallkeep/thumbs/` |
-| fit_blur 合成缓存 | `~/.cache/wallkeep/wallpapers/` |
+| fit_blur 当前合成图 | `~/.cache/wallkeep/wallpapers/`（应用时生成，切换后清理） |
 | X 下载目录 | 默认 `~/Pictures/wallkeep`，可在设置里修改 |
 
 本地文件夹只建立索引；X 媒体会移动到下载目录的 `x/<user>/` 下。
@@ -145,7 +145,7 @@ uv run python -m wallkeep.rotate --once
 ## 已知限制
 
 - 视频支持入库、缩略图、收藏和轮换；动态播放依赖 `mpvpaper`。GIF 按图片入库并原样交给 shell，不生成 fit_blur 合成。
-- `fit_blur` 合成图按最大显示器分辨率生成；多显示器宽高比差异很大时，非最大屏幕可能出现轻微裁切。
+- `fit_blur` 合成图按最大显示器分辨率 × 当前视差缩放生成；多显示器宽高比差异很大时，非最大屏幕可能出现轻微裁切。
 - X 视频下载依赖 `yt-dlp`，X 登录依赖浏览器 Cookie；Cookie 过期后需要重新登录再同步。
 - 近似去重是保守策略：裁切比例较大的转发图可能不会被合并。
 
