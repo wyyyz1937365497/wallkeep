@@ -21,6 +21,16 @@ LANGUAGE = "en"
 
 ZH = {
     "&File": "文件(&F)",
+    "&Edit": "编辑(&E)",
+    "Rotate 90° clockwise": "顺时针旋转 90°",
+    "Rotate the selected image 90° clockwise in place": "将选中的图片顺时针旋转 90°（直接修改文件）",
+    "Current wallpaper": "当前壁纸",
+    "Select the wallpaper currently in use": "选中当前正在使用的壁纸",
+    "No current wallpaper recorded.": "还没有记录当前壁纸。",
+    "Current wallpaper is not in the library.": "当前壁纸不在图库中。",
+    "Selected current wallpaper: {name}": "已选中当前壁纸：{name}",
+    "Could not rotate image": "无法旋转图片",
+    "Rotated {name}": "已旋转 {name}",
     "&Library": "图库(&L)",
     "&View": "视图(&V)",
     "&Help": "帮助(&H)",

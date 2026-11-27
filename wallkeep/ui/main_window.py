@@ -135,6 +135,28 @@ class MainWindow(QMainWindow):
         )
         self.wallpaper_action.triggered.connect(self._open_wallpaper)
 
+        self.current_wallpaper_action = QAction(
+            self._icon("preferences-desktop-wallpaper", "zoom-original"),
+            "Current wallpaper",
+            self,
+        )
+        self.current_wallpaper_action.setStatusTip(
+            "Select the wallpaper currently in use"
+        )
+        self.current_wallpaper_action.triggered.connect(self._select_current_wallpaper)
+
+        self.rotate_action = QAction(
+            self._icon("object-rotate-right", "rotate-right", "view-refresh"),
+            "Rotate 90° clockwise",
+            self,
+        )
+        self.rotate_action.setShortcut(QKeySequence("Ctrl+Shift+R"))
+        self.rotate_action.setStatusTip(
+            "Rotate the selected image 90° clockwise in place"
+        )
+        self.rotate_action.setEnabled(False)
+        self.rotate_action.triggered.connect(self._rotate_current)
+
         self.settings_action = QAction(self._icon("configure"), "Settings", self)
         self.settings_action.setShortcut(QKeySequence("Ctrl+,"))
         self.settings_action.triggered.connect(self._open_settings)
@@ -167,6 +189,7 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self.stop_action)
         toolbar.addAction(self.duplicates_action)
         toolbar.addAction(self.wallpaper_action)
+        toolbar.addAction(self.current_wallpaper_action)
         toolbar.addSeparator()
         toolbar.addAction(self.settings_action)
         spacer = QWidget(toolbar)
@@ -188,6 +211,9 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
         file_menu.addAction(self.quit_action)
 
+        edit_menu = menu.addMenu("&Edit")
+        edit_menu.addAction(self.rotate_action)
+
         library_menu = menu.addMenu("&Library")
         library_menu.addAction(self.sync_action)
         library_menu.addAction(self.stop_action)
@@ -198,6 +224,7 @@ class MainWindow(QMainWindow):
         library_menu.addAction(self.settings_action)
 
         self.view_menu = menu.addMenu("&View")
+        self.view_menu.addAction(self.current_wallpaper_action)
 
         help_menu = menu.addMenu("&Help")
         help_menu.addAction(self.about_action)
@@ -474,6 +501,7 @@ class MainWindow(QMainWindow):
             self._update_empty_text(kind, user)
         count = len(rows)
         self.status_label.setText(i18n.trn("{count} wallpaper", "{count} wallpapers", count))
+        self._update_actions()
 
     def _update_empty_text(self, kind: str, user: str | None) -> None:
         if self.search.text().strip():
@@ -811,6 +839,7 @@ class MainWindow(QMainWindow):
             self.sync_action,
             self.duplicates_action,
             self.wallpaper_action,
+            self.rotate_action,
             self.settings_action,
         ):
             action.setEnabled(not busy)
@@ -891,6 +920,98 @@ class MainWindow(QMainWindow):
 
     def _on_selection_changed(self, *_args) -> None:
         self.details.show_asset(self._current_asset())
+        self._update_actions()
+
+    def _update_actions(self) -> None:
+        asset = self._current_asset()
+        rotatable = bool(asset) and (
+            str(asset.get("mime") or "").startswith("image/")
+            or Path(asset.get("path", "")).suffix.lower() in library.IMAGE_EXTS
+        )
+        self.rotate_action.setEnabled(rotatable and not self._busy)
+
+    def _asset_index(self, asset_id: int) -> int | None:
+        for row_index in range(self.model.rowCount()):
+            row = self.model.row_at(self.model.index(row_index, 0))
+            if row is not None and int(row["id"]) == asset_id:
+                return row_index
+        return None
+
+    def _select_current_wallpaper(self) -> None:
+        current_id = int(db.get_setting("wallpaper_current_id", "0") or 0)
+        if not current_id:
+            current_path = db.get_setting("wallpaper_current_path", "")
+            if current_path:
+                with db.connect() as connection:
+                    row = db.asset_by_path(connection, current_path)
+                if row is not None:
+                    current_id = int(row["id"])
+        if not current_id:
+            self.status_label.setText(i18n.tr("No current wallpaper recorded."))
+            return
+        asset = db.fetch_asset(current_id)
+        if asset is None:
+            self.status_label.setText(i18n.tr("Current wallpaper is not in the library."))
+            return
+        target_index = self._asset_index(current_id)
+        if target_index is None:
+            self._search_timer.stop()
+            self.search.blockSignals(True)
+            self.search.clear()
+            self.search.blockSignals(False)
+            self._current_filter = ("all", None)
+            self._select_filter("all", None)
+            self._reload_assets()
+            target_index = self._asset_index(current_id)
+        if target_index is None:
+            self.status_label.setText(i18n.tr("Current wallpaper is not in the library."))
+            return
+        model_index = self.model.index(target_index, 0)
+        self.list_view.setCurrentIndex(model_index)
+        self.list_view.selectionModel().select(
+            model_index, QItemSelectionModel.SelectionFlag.ClearAndSelect
+        )
+        self.list_view.scrollTo(
+            model_index, QAbstractItemView.ScrollHint.PositionAtCenter
+        )
+        self.details.show_asset(asset)
+        self.status_label.setText(
+            i18n.trf("Selected current wallpaper: {name}", name=Path(asset["path"]).name)
+        )
+
+    def _rotate_current(self) -> None:
+        asset = self._current_asset()
+        if asset is None:
+            return
+        if self._busy:
+            self.status_label.setText(i18n.tr("Wait for the current task to finish."))
+            return
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            result = library.rotate_asset(paths.DB_PATH, int(asset["id"]))
+        except Exception as error:  # noqa: BLE001 - shown to the user
+            QMessageBox.critical(self, i18n.tr("Could not rotate image"), str(error))
+            return
+        finally:
+            QApplication.restoreOverrideCursor()
+        self.refresh()
+        if db.get_setting("wallpaper_current_id", "") == str(asset["id"]):
+            try:
+                method = wallpaper.set_wallpaper(
+                    Path(result["path"]), db.get_setting("wallpaper_fill_mode", "auto")
+                )
+            except Exception as error:  # noqa: BLE001 - shown to the user
+                QMessageBox.warning(
+                    self, i18n.tr("Could not re-apply wallpaper"), str(error)
+                )
+            else:
+                self._append_log(
+                    f"Wallpaper re-applied after rotation: {result['path']} ({method})"
+                )
+        self.status_label.setText(
+            i18n.trf("Rotated {name}", name=Path(result["path"]).name)
+        )
+        self._append_log(f"Rotated 90° clockwise: {result['path']}")
 
     def _context_menu(self, position) -> None:
         index = self.list_view.indexAt(position)

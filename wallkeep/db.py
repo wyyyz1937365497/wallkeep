@@ -377,6 +377,25 @@ def set_favorite(asset_id: int, favorite: bool) -> None:
         )
 
 
+def update_asset_media(
+    asset_id: int,
+    *,
+    sha256: str,
+    width: int,
+    height: int,
+    size: int,
+    mime: str | None,
+    dhash: str | None,
+    phash: str | None,
+) -> None:
+    with connect() as connection:
+        connection.execute(
+            "UPDATE assets SET sha256 = ?, width = ?, height = ?, bytes = ?, "
+            "mime = ?, dhash = ?, phash = ? WHERE id = ?",
+            (sha256, width, height, size, mime or "", dhash, phash, asset_id),
+        )
+
+
 def fetch_rotation_pool(scope: str = "all", include_videos: bool = True) -> list[dict[str, Any]]:
     clauses: list[str] = []
     if scope == "favorites":

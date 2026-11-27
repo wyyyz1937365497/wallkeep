@@ -264,6 +264,144 @@ def make_thumbnail(source: Path, sha256: str, size: int = 512) -> Path | None:
         return None
 
 
+def _rotate_image_file(source: Path, destination: Path, degrees: int) -> None:
+    suffix = source.suffix.lower()
+    if suffix in {".gif", ".webp"}:
+        with Image.open(source) as image:
+            if getattr(image, "n_frames", 1) > 1:
+                raise ValueError("animated images cannot be rotated")
+
+    orientation = 1
+    if suffix in {".jpg", ".jpeg"}:
+        try:
+            with Image.open(source) as image:
+                orientation = int(image.getexif().get(274, 1) or 1)
+        except Exception:
+            orientation = 1
+        if orientation == 1 and shutil.which("jpegtran"):
+            destination.unlink(missing_ok=True)
+            result = subprocess.run(
+                [
+                    "jpegtran",
+                    "-rotate",
+                    str(degrees % 360),
+                    "-copy",
+                    "all",
+                    "-optimize",
+                    "-outfile",
+                    str(destination),
+                    str(source),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False,
+            )
+            if result.returncode == 0 and destination.exists() and destination.stat().st_size:
+                return
+            destination.unlink(missing_ok=True)
+
+    with Image.open(source) as original:
+        image = ImageOps.exif_transpose(original)
+        if degrees % 360 == 90:
+            image = image.transpose(Image.Transpose.ROTATE_270)
+        elif degrees % 360 == 180:
+            image = image.transpose(Image.Transpose.ROTATE_180)
+        elif degrees % 360 == 270:
+            image = image.transpose(Image.Transpose.ROTATE_90)
+        else:
+            raise ValueError("rotation must be a multiple of 90 degrees")
+        format_name = {
+            ".jpg": "JPEG",
+            ".jpeg": "JPEG",
+            ".png": "PNG",
+            ".webp": "WEBP",
+            ".avif": "AVIF",
+            ".bmp": "BMP",
+            ".gif": "GIF",
+        }.get(suffix)
+        if format_name is None:
+            raise ValueError(f"unsupported image format: {suffix}")
+        save_kwargs: dict[str, Any] = {}
+        if format_name == "JPEG":
+            save_kwargs.update(quality=95, subsampling=0, optimize=True)
+            exif = original.getexif()
+            if exif:
+                exif[274] = 1
+                save_kwargs["exif"] = exif.tobytes()
+        elif format_name == "PNG":
+            save_kwargs["optimize"] = True
+        elif format_name == "WEBP":
+            save_kwargs.update(lossless=True, method=6)
+        elif format_name == "AVIF":
+            save_kwargs["quality"] = 95
+        elif format_name == "GIF":
+            save_kwargs["optimize"] = False
+        icc_profile = original.info.get("icc_profile")
+        if icc_profile:
+            save_kwargs["icc_profile"] = icc_profile
+        image.save(destination, format_name, **save_kwargs)
+
+
+def rotate_asset(db_path: Path, asset_id: int, degrees: int = 90) -> dict[str, Any]:
+    """Rotate an image in place and refresh its metadata and thumbnail."""
+    if degrees % 90 != 0:
+        raise ValueError("rotation must be a multiple of 90 degrees")
+    with db.connect(db_path) as connection:
+        row = connection.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
+    if row is None:
+        raise ValueError("asset not found")
+    path = Path(row["path"])
+    if not path.is_file():
+        raise ValueError("image file is missing")
+    if is_video(path) or str(row["mime"] or "").startswith("video/"):
+        raise ValueError("only still images can be rotated")
+
+    stat = path.stat()
+    temporary = path.with_name(f".{path.name}.rotate-{os.getpid()}{path.suffix}")
+    try:
+        _rotate_image_file(path, temporary, degrees)
+        new_sha = sha256_file(temporary)
+        with db.connect(db_path) as connection:
+            existing = db.asset_by_sha(connection, new_sha)
+        if existing is not None and int(existing["id"]) != asset_id:
+            raise ValueError("rotated image duplicates another asset")
+        probe = probe_image(temporary)
+        if probe is None:
+            raise ValueError("rotated image is unreadable")
+        width, height, mime = probe
+        new_size = temporary.stat().st_size
+        new_dhash = dhash(temporary)
+        new_phash = phash(temporary)
+        os.chmod(temporary, stat.st_mode)
+        os.replace(temporary, path)
+        make_thumbnail(path, new_sha)
+        db.update_asset_media(
+            asset_id,
+            sha256=new_sha,
+            width=width,
+            height=height,
+            size=new_size,
+            mime=mime,
+            dhash=new_dhash,
+            phash=new_phash,
+        )
+        old_sha = str(row["sha256"])
+        if old_sha != new_sha:
+            thumb_path(old_sha).unlink(missing_ok=True)
+        return {
+            "id": asset_id,
+            "path": str(path),
+            "sha256": new_sha,
+            "width": width,
+            "height": height,
+            "bytes": new_size,
+            "mime": mime,
+        }
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 ProgressCallback = Callable[[int, int, Path], None]
 CancelCallback = Callable[[], bool]
 
