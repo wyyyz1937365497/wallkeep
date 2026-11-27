@@ -2,7 +2,7 @@
 # Local-only PKGBUILD: source tarball is placed next to this file.
 pkgname=wallkeep
 pkgver=0.2.0
-pkgrel=1
+pkgrel=2
 pkgdesc="Local-first wallpaper library; optional X sync is downloaded by gallery-dl"
 arch=('any')
 url="https://github.com/wyyyz1937365497/wallkeep"
